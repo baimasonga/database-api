@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+/* AVDP visual theme — deep green and gold, carried through both the public
+   dashboard and the internal Data Manager. */
+@theme {
+  --color-avdp-900: #0b3d2c;
+  --color-avdp-800: #12513a;
+  --color-avdp-700: #1a6b4c;
+  --color-avdp-600: #22855f;
+  --color-avdp-500: #2fa276;
+  --color-avdp-100: #e6f3ed;
+  --color-avdp-50: #f3f9f6;
+  --color-gold-600: #b8860b;
+  --color-gold-500: #d4a017;
+  --color-gold-100: #fdf3d8;
+  --color-ink-900: #10201a;
+  --color-ink-600: #4a5b54;
+  --color-ink-400: #7d8b85;
+  --color-line: #dce5e1;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: #f6f8f7;
+  color: var(--color-ink-900);
+}
+
+.card {
+  @apply rounded-lg border border-[color:var(--color-line)] bg-white p-5 shadow-sm;
+}
+
+.label {
+  @apply text-xs font-medium uppercase tracking-wide text-[color:var(--color-ink-400)];
+}
+
+/* Tailwind v4 only lets @apply reference real utilities, so the shared button
+   base is declared with @utility and composed by each variant. */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.btn-primary {
+  @apply btn bg-[color:var(--color-avdp-700)] text-white hover:bg-[color:var(--color-avdp-800)];
+}
+
+.btn-secondary {
+  @apply btn border border-[color:var(--color-line)] bg-white text-[color:var(--color-ink-900)] hover:bg-[color:var(--color-avdp-50)];
+}
+
+.btn-danger {
+  @apply btn border border-red-200 bg-white text-red-700 hover:bg-red-50;
+}
+
+.input {
+  @apply w-full rounded-md border border-[color:var(--color-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[color:var(--color-avdp-600)] focus:ring-1 focus:ring-[color:var(--color-avdp-600)];
+}
+
+.table {
+  @apply w-full border-collapse text-sm;
+}
+
+.table th {
+  @apply border-b border-[color:var(--color-line)] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[color:var(--color-ink-400)];
+}
+
+.table td {
+  @apply border-b border-[color:var(--color-line)] px-3 py-2 align-top;
+}
+
+@utility badge {
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+}

@@ -1,0 +1,1732 @@
+// ---------------------------------------------------------------------------
+// AVDP Integrated Data & Analytics Platform
+// Central data model. Logical modules are physical PostgreSQL schemas:
+//   admin | governance | master_data | beneficiaries
+//   project_delivery | production | monitoring | analytics
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider        = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["admin", "governance", "master_data", "beneficiaries", "project_delivery", "production", "monitoring", "analytics"]
+}
+
+// ===========================================================================
+// ADMIN — authentication, roles, permissions
+// ===========================================================================
+
+enum UserStatus {
+  active
+  suspended
+  disabled
+
+  @@schema("admin")
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  fullName     String     @map("full_name")
+  passwordHash String     @map("password_hash")
+  unit         String?
+  status       UserStatus @default(active)
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  roles              UserRole[]
+  sessions           Session[]
+  auditLogs          AuditLog[]
+  uploadedFiles      ImportFile[]         @relation("ImportFileUploader")
+  importJobs         ImportJob[]          @relation("ImportJobCreator")
+  approvalRequests   ApprovalRequest[]    @relation("ApprovalRequester")
+  approvalActions    ApprovalAction[]
+  publications       PublicationRecord[]
+  resolvedValidation ValidationResult[]   @relation("ValidationResolver")
+  mergeDecisions     BeneficiaryMerge[]   @relation("MergeReviewer")
+  duplicateReviews   DuplicateCandidate[] @relation("DuplicateReviewer")
+
+  @@index([status])
+  @@map("users")
+  @@schema("admin")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+  @@schema("admin")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@map("permissions")
+  @@schema("admin")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+  @@schema("admin")
+}
+
+model UserRole {
+  userId     String   @map("user_id") @db.Uuid
+  roleId     String   @map("role_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  assignedBy String?  @map("assigned_by") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+  @@schema("admin")
+}
+
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+  @@schema("admin")
+}
+
+// ===========================================================================
+// MASTER DATA — geography, value chains, reference lists, reporting periods
+// ===========================================================================
+
+model District {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  region    String?
+  province  String?
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  chiefdoms            Chiefdom[]
+  communities          Community[]
+  beneficiaryLocations BeneficiaryLocation[]
+  activities           Activity[]
+  infrastructure       InfrastructureAsset[]
+  farms                Farm[]
+  indicatorTargets     IndicatorTarget[]
+  indicatorObs         IndicatorObservation[]
+
+  @@index([name])
+  @@map("districts")
+  @@schema("master_data")
+}
+
+model Chiefdom {
+  id         String   @id @default(uuid()) @db.Uuid
+  districtId String   @map("district_id") @db.Uuid
+  code       String   @unique
+  name       String
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  district             District              @relation(fields: [districtId], references: [id])
+  wards                Ward[]
+  communities          Community[]
+  beneficiaryLocations BeneficiaryLocation[]
+  activities           Activity[]
+  infrastructure       InfrastructureAsset[]
+  farms                Farm[]
+
+  @@unique([districtId, name])
+  @@index([districtId])
+  @@map("chiefdoms")
+  @@schema("master_data")
+}
+
+model Ward {
+  id         String   @id @default(uuid()) @db.Uuid
+  chiefdomId String   @map("chiefdom_id") @db.Uuid
+  code       String   @unique
+  name       String
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  chiefdom             Chiefdom              @relation(fields: [chiefdomId], references: [id])
+  communities          Community[]
+  beneficiaryLocations BeneficiaryLocation[]
+
+  @@unique([chiefdomId, name])
+  @@index([chiefdomId])
+  @@map("wards")
+  @@schema("master_data")
+}
+
+model Community {
+  id         String   @id @default(uuid()) @db.Uuid
+  districtId String?  @map("district_id") @db.Uuid
+  chiefdomId String?  @map("chiefdom_id") @db.Uuid
+  wardId     String?  @map("ward_id") @db.Uuid
+  code       String?  @unique
+  name       String
+  latitude   Decimal? @db.Decimal(9, 6)
+  longitude  Decimal? @db.Decimal(9, 6)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  district District? @relation(fields: [districtId], references: [id])
+  chiefdom Chiefdom? @relation(fields: [chiefdomId], references: [id])
+  ward     Ward?     @relation(fields: [wardId], references: [id])
+
+  beneficiaryLocations BeneficiaryLocation[]
+  farms                Farm[]
+  infrastructure       InfrastructureAsset[]
+
+  @@index([districtId])
+  @@index([chiefdomId])
+  @@index([name])
+  @@map("communities")
+  @@schema("master_data")
+}
+
+model ValueChain {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  category    String?
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  beneficiaries    BeneficiaryValueChain[]
+  activities       Activity[]
+  farmPlots        FarmPlot[]
+  production       ProductionRecord[]
+  harvests         HarvestRecord[]
+  sales            SalesRecord[]
+  infrastructure   InfrastructureAsset[]
+  indicatorTargets IndicatorTarget[]
+  indicatorObs     IndicatorObservation[]
+  trainings        TrainingEvent[]
+
+  @@index([name])
+  @@map("value_chains")
+  @@schema("master_data")
+}
+
+model UnitOfMeasure {
+  id           String   @id @default(uuid()) @db.Uuid
+  code         String   @unique
+  name         String
+  dimension    String?
+  baseUnitCode String?  @map("base_unit_code")
+  factorToBase Decimal? @map("factor_to_base") @db.Decimal(18, 6)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  production ProductionRecord[]
+  harvests   HarvestRecord[]
+  sales      SalesRecord[]
+  inputs     InputDistribution[]
+
+  @@map("units_of_measure")
+  @@schema("master_data")
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  orgType   String?  @map("org_type")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  farmerGroups FarmerGroup[]
+
+  @@map("organizations")
+  @@schema("master_data")
+}
+
+model ImplementingPartner {
+  id            String   @id @default(uuid()) @db.Uuid
+  code          String   @unique
+  name          String
+  partnerType   String?  @map("partner_type")
+  contactPerson String?  @map("contact_person")
+  contactEmail  String?  @map("contact_email")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  activities     Activity[]
+  trainings      TrainingEvent[]
+  infrastructure InfrastructureAsset[]
+
+  @@map("implementing_partners")
+  @@schema("master_data")
+}
+
+enum PeriodType {
+  month
+  quarter
+  semester
+  year
+  custom
+
+  @@schema("master_data")
+}
+
+enum PeriodStatus {
+  planned
+  open
+  closed
+  locked
+
+  @@schema("master_data")
+}
+
+model ReportingPeriod {
+  id         String       @id @default(uuid()) @db.Uuid
+  code       String       @unique
+  name       String
+  periodType PeriodType   @map("period_type")
+  fiscalYear Int          @map("fiscal_year")
+  startDate  DateTime     @map("start_date") @db.Date
+  endDate    DateTime     @map("end_date") @db.Date
+  status     PeriodStatus @default(planned)
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  importJobs       ImportJob[]
+  datasetVersions  DatasetVersion[]
+  publications     PublicationRecord[]
+  activities       Activity[]
+  trainings        TrainingEvent[]
+  production       ProductionRecord[]
+  harvests         HarvestRecord[]
+  sales            SalesRecord[]
+  indicatorTargets IndicatorTarget[]
+  indicatorObs     IndicatorObservation[]
+  inputs           InputDistribution[]
+  equipment        EquipmentDistribution[]
+  infrastructure   InfrastructureAsset[]
+
+  @@index([fiscalYear])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("reporting_periods")
+  @@schema("master_data")
+}
+
+// ===========================================================================
+// GOVERNANCE — sources, datasets, ingestion, mapping, quality, approval
+// ===========================================================================
+
+enum SourceType {
+  excel
+  csv
+  database
+  api
+  odk
+  kobo
+  manual
+  gis
+  other
+
+  @@schema("governance")
+}
+
+enum ConnectionType {
+  upload
+  api
+  database
+  scheduled
+  manual
+
+  @@schema("governance")
+}
+
+enum SourceStatus {
+  active
+  inactive
+  attention_required
+
+  @@schema("governance")
+}
+
+enum DataClassification {
+  public
+  internal
+  confidential
+  restricted
+
+  @@schema("governance")
+}
+
+enum UpdateFrequency {
+  ad_hoc
+  daily
+  weekly
+  monthly
+  quarterly
+  semi_annual
+  annual
+
+  @@schema("governance")
+}
+
+model DataSource {
+  id                     String             @id @default(uuid()) @db.Uuid
+  code                   String             @unique
+  name                   String
+  description            String?
+  ownerUnit              String?            @map("owner_unit")
+  sourceType             SourceType         @map("source_type")
+  connectionType         ConnectionType     @map("connection_type")
+  frequency              UpdateFrequency    @default(ad_hoc)
+  status                 SourceStatus       @default(active)
+  dataClassification     DataClassification @default(internal) @map("data_classification")
+  contactPerson          String?            @map("contact_person")
+  contactEmail           String?            @map("contact_email")
+  containsPersonalData   Boolean            @default(false) @map("contains_personal_data")
+  onboardingStatus       OnboardingStatus   @default(discovered) @map("onboarding_status")
+  repositoryLocation     String?            @map("repository_location")
+  notes                  String?
+  archivedAt             DateTime?          @map("archived_at")
+  lastReceivedAt         DateTime?          @map("last_received_at")
+  lastSuccessfulSyncAt   DateTime?          @map("last_successful_sync_at")
+  lastSuccessfulImportAt DateTime?          @map("last_successful_import_at")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+  createdBy              String?            @map("created_by") @db.Uuid
+  updatedBy              String?            @map("updated_by") @db.Uuid
+
+  datasets     Dataset[]
+  importJobs   ImportJob[]
+  integrations Integration[]
+  indicators   Indicator[]
+
+  @@index([status])
+  @@index([sourceType])
+  @@index([onboardingStatus])
+  @@map("data_sources")
+  @@schema("governance")
+}
+
+enum OnboardingStatus {
+  discovered
+  assessed
+  mapped
+  tested
+  validated
+  approved
+  live
+
+  @@schema("governance")
+}
+
+enum DatasetDomain {
+  beneficiaries
+  training
+  production
+  infrastructure
+  inputs
+  geography
+  indicators
+  other
+
+  @@schema("governance")
+}
+
+model Dataset {
+  id                String           @id @default(uuid()) @db.Uuid
+  dataSourceId      String           @map("data_source_id") @db.Uuid
+  code              String           @unique
+  name              String
+  description       String?
+  domain            DatasetDomain    @default(other)
+  ownerUnit         String?          @map("owner_unit")
+  primaryIdentifier String?          @map("primary_identifier")
+  frequency         UpdateFrequency  @default(ad_hoc)
+  onboardingStatus  OnboardingStatus @default(discovered) @map("onboarding_status")
+  isActive          Boolean          @default(true) @map("is_active")
+  archivedAt        DateTime?        @map("archived_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  createdBy         String?          @map("created_by") @db.Uuid
+  updatedBy         String?          @map("updated_by") @db.Uuid
+
+  dataSource       DataSource          @relation(fields: [dataSourceId], references: [id])
+  versions         DatasetVersion[]
+  importJobs       ImportJob[]
+  mappingTemplates MappingTemplate[]
+  validationRules  ValidationRule[]
+  publications     PublicationRecord[]
+
+  @@index([dataSourceId])
+  @@index([domain])
+  @@map("datasets")
+  @@schema("governance")
+}
+
+model DatasetVersion {
+  id                String   @id @default(uuid()) @db.Uuid
+  datasetId         String   @map("dataset_id") @db.Uuid
+  reportingPeriodId String?  @map("reporting_period_id") @db.Uuid
+  versionNumber     Int      @map("version_number")
+  schemaSnapshot    Json?    @map("schema_snapshot")
+  rowCount          Int      @default(0) @map("row_count")
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdBy         String?  @map("created_by") @db.Uuid
+
+  dataset         Dataset             @relation(fields: [datasetId], references: [id])
+  reportingPeriod ReportingPeriod?    @relation(fields: [reportingPeriodId], references: [id])
+  publications    PublicationRecord[]
+
+  @@unique([datasetId, versionNumber])
+  @@index([reportingPeriodId])
+  @@map("dataset_versions")
+  @@schema("governance")
+}
+
+enum ImportStatus {
+  uploaded
+  profiling
+  mapping_required
+  validating
+  validation_failed
+  ready_for_review
+  submitted
+  approved
+  published
+  rejected
+  failed
+
+  @@schema("governance")
+}
+
+model ImportJob {
+  id                String       @id @default(uuid()) @db.Uuid
+  dataSourceId      String       @map("data_source_id") @db.Uuid
+  datasetId         String       @map("dataset_id") @db.Uuid
+  reportingPeriodId String       @map("reporting_period_id") @db.Uuid
+  importFileId      String?      @unique @map("import_file_id") @db.Uuid
+  integrationRunId  String?      @map("integration_run_id") @db.Uuid
+  status            ImportStatus @default(uploaded)
+  rowCount          Int          @default(0) @map("row_count")
+  columnCount       Int          @default(0) @map("column_count")
+  validRowCount     Int          @default(0) @map("valid_row_count")
+  errorRowCount     Int          @default(0) @map("error_row_count")
+  warningRowCount   Int          @default(0) @map("warning_row_count")
+  duplicateRowCount Int          @default(0) @map("duplicate_row_count")
+  qualityScore      Decimal?     @map("quality_score") @db.Decimal(5, 2)
+  profile           Json?
+  statusMessage     String?      @map("status_message")
+  startedAt         DateTime?    @map("started_at")
+  completedAt       DateTime?    @map("completed_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  createdBy         String?      @map("created_by") @db.Uuid
+  updatedBy         String?      @map("updated_by") @db.Uuid
+
+  dataSource      DataSource      @relation(fields: [dataSourceId], references: [id])
+  dataset         Dataset         @relation(fields: [datasetId], references: [id])
+  reportingPeriod ReportingPeriod @relation(fields: [reportingPeriodId], references: [id])
+  file            ImportFile?     @relation(fields: [importFileId], references: [id])
+  creator         User?           @relation("ImportJobCreator", fields: [createdBy], references: [id])
+  integrationRun  IntegrationRun? @relation(fields: [integrationRunId], references: [id])
+
+  rows              ImportRow[]
+  fieldMappings     ImportFieldMapping[]
+  validationResults ValidationResult[]
+  approvalRequests  ApprovalRequest[]
+  publications      PublicationRecord[]
+
+  @@index([dataSourceId])
+  @@index([datasetId])
+  @@index([reportingPeriodId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("import_jobs")
+  @@schema("governance")
+}
+
+model ImportFile {
+  id             String   @id @default(uuid()) @db.Uuid
+  fileName       String   @map("file_name")
+  storagePath    String   @map("storage_path")
+  mimeType       String   @map("mime_type")
+  extension      String
+  sizeBytes      Int      @map("size_bytes")
+  checksumSha256 String   @map("checksum_sha256")
+  rowCount       Int?     @map("row_count")
+  columnCount    Int?     @map("column_count")
+  uploadedAt     DateTime @default(now()) @map("uploaded_at")
+  uploadedBy     String?  @map("uploaded_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  uploader  User?      @relation("ImportFileUploader", fields: [uploadedBy], references: [id])
+  importJob ImportJob?
+
+  @@index([checksumSha256])
+  @@map("import_files")
+  @@schema("governance")
+}
+
+/// Raw landing zone: one row per source record, stored verbatim plus the
+/// mapped/canonical projection. Raw payloads are never modified in place.
+model ImportRow {
+  id          String   @id @default(uuid()) @db.Uuid
+  importJobId String   @map("import_job_id") @db.Uuid
+  rowNumber   Int      @map("row_number")
+  rawData     Json     @map("raw_data")
+  mappedData  Json?    @map("mapped_data")
+  rowHash     String   @map("row_hash")
+  isValid     Boolean  @default(false) @map("is_valid")
+  hasWarnings Boolean  @default(false) @map("has_warnings")
+  isDuplicate Boolean  @default(false) @map("is_duplicate")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  importJob         ImportJob          @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  validationResults ValidationResult[]
+
+  @@unique([importJobId, rowNumber])
+  @@index([importJobId, isValid])
+  @@index([rowHash])
+  @@map("import_rows")
+  @@schema("governance")
+}
+
+enum ValidationCategory {
+  required_field
+  type
+  range
+  reference
+  duplicate
+  geography
+  date
+  business_rule
+  consistency
+
+  @@schema("governance")
+}
+
+enum ValidationSeverity {
+  error
+  warning
+  info
+
+  @@schema("governance")
+}
+
+model ValidationRule {
+  id          String             @id @default(uuid()) @db.Uuid
+  datasetId   String?            @map("dataset_id") @db.Uuid
+  code        String             @unique
+  name        String
+  description String?
+  category    ValidationCategory
+  severity    ValidationSeverity @default(error)
+  fieldName   String?            @map("field_name")
+  /// Declarative configuration only — no executable code is ever stored.
+  config      Json               @default("{}")
+  isActive    Boolean            @default(true) @map("is_active")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+  createdBy   String?            @map("created_by") @db.Uuid
+
+  dataset Dataset?           @relation(fields: [datasetId], references: [id])
+  results ValidationResult[]
+
+  @@index([datasetId])
+  @@index([category])
+  @@map("validation_rules")
+  @@schema("governance")
+}
+
+model ValidationResult {
+  id               String             @id @default(uuid()) @db.Uuid
+  importJobId      String             @map("import_job_id") @db.Uuid
+  importRowId      String?            @map("import_row_id") @db.Uuid
+  validationRuleId String?            @map("validation_rule_id") @db.Uuid
+  rowNumber        Int?               @map("row_number")
+  fieldName        String?            @map("field_name")
+  ruleCode         String             @map("rule_code")
+  category         ValidationCategory
+  severity         ValidationSeverity
+  message          String
+  rawValue         String?            @map("raw_value")
+  suggestedValue   String?            @map("suggested_value")
+  resolved         Boolean            @default(false)
+  resolution       String?
+  resolvedBy       String?            @map("resolved_by") @db.Uuid
+  resolvedAt       DateTime?          @map("resolved_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  importJob ImportJob       @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  importRow ImportRow?      @relation(fields: [importRowId], references: [id], onDelete: Cascade)
+  rule      ValidationRule? @relation(fields: [validationRuleId], references: [id])
+  resolver  User?           @relation("ValidationResolver", fields: [resolvedBy], references: [id])
+
+  @@index([importJobId, severity])
+  @@index([importJobId, resolved])
+  @@index([ruleCode])
+  @@map("validation_results")
+  @@schema("governance")
+}
+
+enum ApprovalStatus {
+  pending
+  in_review
+  returned
+  approved
+  rejected
+  withdrawn
+
+  @@schema("governance")
+}
+
+enum ApprovalActionType {
+  submit
+  start_review
+  return_for_correction
+  approve
+  reject
+  publish
+  unpublish
+  withdraw
+
+  @@schema("governance")
+}
+
+model ApprovalRequest {
+  id           String         @id @default(uuid()) @db.Uuid
+  importJobId  String         @map("import_job_id") @db.Uuid
+  status       ApprovalStatus @default(pending)
+  submittedBy  String?        @map("submitted_by") @db.Uuid
+  submittedAt  DateTime       @default(now()) @map("submitted_at")
+  decidedAt    DateTime?      @map("decided_at")
+  qualityScore Decimal?       @map("quality_score") @db.Decimal(5, 2)
+  errorCount   Int            @default(0) @map("error_count")
+  warningCount Int            @default(0) @map("warning_count")
+  comment      String?
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  importJob ImportJob        @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  requester User?            @relation("ApprovalRequester", fields: [submittedBy], references: [id])
+  actions   ApprovalAction[]
+
+  @@index([status])
+  @@index([importJobId])
+  @@map("approval_requests")
+  @@schema("governance")
+}
+
+model ApprovalAction {
+  id                String             @id @default(uuid()) @db.Uuid
+  approvalRequestId String             @map("approval_request_id") @db.Uuid
+  action            ApprovalActionType
+  actorId           String?            @map("actor_id") @db.Uuid
+  previousStatus    String?            @map("previous_status")
+  newStatus         String?            @map("new_status")
+  comment           String?
+  createdAt         DateTime           @default(now()) @map("created_at")
+
+  approvalRequest ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+  actor           User?           @relation(fields: [actorId], references: [id])
+
+  @@index([approvalRequestId])
+  @@map("approval_actions")
+  @@schema("governance")
+}
+
+enum PublicationStatus {
+  published
+  superseded
+  withdrawn
+
+  @@schema("governance")
+}
+
+model PublicationRecord {
+  id                String            @id @default(uuid()) @db.Uuid
+  datasetId         String            @map("dataset_id") @db.Uuid
+  datasetVersionId  String?           @map("dataset_version_id") @db.Uuid
+  importJobId       String            @map("import_job_id") @db.Uuid
+  reportingPeriodId String            @map("reporting_period_id") @db.Uuid
+  status            PublicationStatus @default(published)
+  publishedRowCount Int               @default(0) @map("published_row_count")
+  qualityScore      Decimal?          @map("quality_score") @db.Decimal(5, 2)
+  publishedAt       DateTime          @default(now()) @map("published_at")
+  publishedBy       String?           @map("published_by") @db.Uuid
+  supersededAt      DateTime?         @map("superseded_at")
+  supersededById    String?           @map("superseded_by_id") @db.Uuid
+  withdrawnAt       DateTime?         @map("withdrawn_at")
+  notes             String?
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  dataset         Dataset         @relation(fields: [datasetId], references: [id])
+  datasetVersion  DatasetVersion? @relation(fields: [datasetVersionId], references: [id])
+  importJob       ImportJob       @relation(fields: [importJobId], references: [id])
+  reportingPeriod ReportingPeriod @relation(fields: [reportingPeriodId], references: [id])
+  publisher       User?           @relation(fields: [publishedBy], references: [id])
+
+  @@index([datasetId, status])
+  @@index([reportingPeriodId])
+  @@index([publishedAt])
+  @@map("publication_records")
+  @@schema("governance")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorEmail String?  @map("actor_email")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  summary    String?
+  changes    Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+  @@schema("governance")
+}
+
+// --- Mapping engine ---------------------------------------------------------
+
+model MappingTemplate {
+  id           String   @id @default(uuid()) @db.Uuid
+  datasetId    String?  @map("dataset_id") @db.Uuid
+  code         String   @unique
+  name         String
+  description  String?
+  targetEntity String   @map("target_entity")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdBy    String?  @map("created_by") @db.Uuid
+
+  dataset Dataset?               @relation(fields: [datasetId], references: [id])
+  fields  MappingTemplateField[]
+
+  @@index([datasetId])
+  @@map("mapping_templates")
+  @@schema("governance")
+}
+
+model MappingTemplateField {
+  id                String   @id @default(uuid()) @db.Uuid
+  mappingTemplateId String   @map("mapping_template_id") @db.Uuid
+  sourceColumn      String   @map("source_column")
+  canonicalField    String   @map("canonical_field")
+  isRequired        Boolean  @default(false) @map("is_required")
+  /// Declarative transformation chain, e.g. [{"op":"trim"},{"op":"lookup","set":"district"}]
+  transformations   Json     @default("[]")
+  defaultValue      String?  @map("default_value")
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  template MappingTemplate @relation(fields: [mappingTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([mappingTemplateId, sourceColumn])
+  @@map("mapping_template_fields")
+  @@schema("governance")
+}
+
+model ImportFieldMapping {
+  id              String   @id @default(uuid()) @db.Uuid
+  importJobId     String   @map("import_job_id") @db.Uuid
+  sourceColumn    String   @map("source_column")
+  canonicalField  String?  @map("canonical_field")
+  detectedType    String?  @map("detected_type")
+  sampleValues    Json?    @map("sample_values")
+  isRequired      Boolean  @default(false) @map("is_required")
+  transformations Json     @default("[]")
+  status          String   @default("unmapped")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  importJob ImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@unique([importJobId, sourceColumn])
+  @@map("import_field_mappings")
+  @@schema("governance")
+}
+
+model LookupSet {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  values LookupValue[]
+
+  @@map("lookup_sets")
+  @@schema("governance")
+}
+
+model LookupValue {
+  id             String   @id @default(uuid()) @db.Uuid
+  lookupSetId    String   @map("lookup_set_id") @db.Uuid
+  /// Normalised (upper-cased, trimmed) inbound value.
+  externalValue  String   @map("external_value")
+  canonicalValue String   @map("canonical_value")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  lookupSet LookupSet @relation(fields: [lookupSetId], references: [id], onDelete: Cascade)
+
+  @@unique([lookupSetId, externalValue])
+  @@map("lookup_values")
+  @@schema("governance")
+}
+
+// --- Integration framework (Phase 16 foundation) ---------------------------
+
+enum ConnectorType {
+  rest_api
+  database
+  odk
+  webhook
+  scheduled_file
+
+  @@schema("governance")
+}
+
+enum IntegrationStatus {
+  draft
+  active
+  paused
+  failing
+
+  @@schema("governance")
+}
+
+model Integration {
+  id               String            @id @default(uuid()) @db.Uuid
+  dataSourceId     String            @map("data_source_id") @db.Uuid
+  code             String            @unique
+  name             String
+  connectorType    ConnectorType     @map("connector_type")
+  status           IntegrationStatus @default(draft)
+  authType         String?           @map("auth_type")
+  baseUrl          String?           @map("base_url")
+  /// Non-secret connector settings only.
+  config           Json              @default("{}")
+  /// Encrypted at rest; never serialised to any API response.
+  secretCiphertext String?           @map("secret_ciphertext")
+  scheduleCron     String?           @map("schedule_cron")
+  lastAttemptAt    DateTime?         @map("last_attempt_at")
+  lastSuccessAt    DateTime?         @map("last_success_at")
+  lastFailureAt    DateTime?         @map("last_failure_at")
+  failureMessage   String?           @map("failure_message")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  createdBy        String?           @map("created_by") @db.Uuid
+
+  dataSource DataSource       @relation(fields: [dataSourceId], references: [id])
+  runs       IntegrationRun[]
+
+  @@index([dataSourceId])
+  @@index([status])
+  @@map("integrations")
+  @@schema("governance")
+}
+
+model IntegrationRun {
+  id               String    @id @default(uuid()) @db.Uuid
+  integrationId    String    @map("integration_id") @db.Uuid
+  status           String    @default("running")
+  startedAt        DateTime  @default(now()) @map("started_at")
+  completedAt      DateTime? @map("completed_at")
+  recordsReceived  Int       @default(0) @map("records_received")
+  recordsProcessed Int       @default(0) @map("records_processed")
+  recordsRejected  Int       @default(0) @map("records_rejected")
+  errorSummary     String?   @map("error_summary")
+  triggeredBy      String?   @map("triggered_by") @db.Uuid
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  importJobs  ImportJob[]
+
+  @@index([integrationId, startedAt])
+  @@map("integration_runs")
+  @@schema("governance")
+}
+
+// ===========================================================================
+// BENEFICIARIES — canonical identity, groups, deduplication
+// ===========================================================================
+
+enum Sex {
+  male
+  female
+  other
+  unknown
+
+  @@schema("beneficiaries")
+}
+
+enum BeneficiaryStatus {
+  provisional
+  confirmed
+  merged
+  inactive
+
+  @@schema("beneficiaries")
+}
+
+model Beneficiary {
+  id                String            @id @default(uuid()) @db.Uuid
+  /// Human-readable canonical reference, e.g. AVDP-FRM-00001234. Never a PK.
+  avdpReference     String?           @unique @map("avdp_reference")
+  fullName          String            @map("full_name")
+  firstName         String?           @map("first_name")
+  lastName          String?           @map("last_name")
+  sex               Sex               @default(unknown)
+  dateOfBirth       DateTime?         @map("date_of_birth") @db.Date
+  ageGroup          String?           @map("age_group")
+  phone             String?
+  beneficiaryType   String?           @map("beneficiary_type")
+  isYouth           Boolean?          @map("is_youth")
+  disability        Boolean?
+  status            BeneficiaryStatus @default(provisional)
+  mergedIntoId      String?           @map("merged_into_id") @db.Uuid
+  sourceImportJobId String?           @map("source_import_job_id") @db.Uuid
+  firstSeenPeriodId String?           @map("first_seen_period_id") @db.Uuid
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  createdBy         String?           @map("created_by") @db.Uuid
+  updatedBy         String?           @map("updated_by") @db.Uuid
+
+  mergedInto Beneficiary?  @relation("BeneficiaryMergeTarget", fields: [mergedIntoId], references: [id])
+  mergedFrom Beneficiary[] @relation("BeneficiaryMergeTarget")
+
+  identifiers   BeneficiaryIdentifier[]
+  locations     BeneficiaryLocation[]
+  valueChains   BeneficiaryValueChain[]
+  groupMembers  FarmerGroupMember[]
+  farms         Farm[]
+  participation ActivityParticipant[]
+  attendance    TrainingAttendance[]
+  inputs        InputDistribution[]
+  equipment     EquipmentDistribution[]
+  production    ProductionRecord[]
+  harvests      HarvestRecord[]
+  sales         SalesRecord[]
+
+  duplicatesAsPrimary   DuplicateCandidate[] @relation("DuplicatePrimary")
+  duplicatesAsCandidate DuplicateCandidate[] @relation("DuplicateCandidate")
+  mergesAsSurvivor      BeneficiaryMerge[]   @relation("MergeSurvivor")
+  mergesAsMerged        BeneficiaryMerge[]   @relation("MergeMerged")
+
+  @@index([status])
+  @@index([phone])
+  @@index([fullName])
+  @@map("beneficiaries")
+  @@schema("beneficiaries")
+}
+
+enum IdentifierType {
+  avdp
+  national_id
+  phone
+  project_id
+  group_membership_id
+  external_source_id
+
+  @@schema("beneficiaries")
+}
+
+model BeneficiaryIdentifier {
+  id             String         @id @default(uuid()) @db.Uuid
+  beneficiaryId  String         @map("beneficiary_id") @db.Uuid
+  identifierType IdentifierType @map("identifier_type")
+  /// Normalised value used for deterministic matching.
+  value          String
+  issuingSource  String?        @map("issuing_source")
+  isTrusted      Boolean        @default(false) @map("is_trusted")
+  isPrimary      Boolean        @default(false) @map("is_primary")
+  retiredAt      DateTime?      @map("retired_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+
+  @@unique([identifierType, value, issuingSource])
+  @@index([beneficiaryId])
+  @@index([value])
+  @@map("beneficiary_identifiers")
+  @@schema("beneficiaries")
+}
+
+model BeneficiaryLocation {
+  id            String    @id @default(uuid()) @db.Uuid
+  beneficiaryId String    @map("beneficiary_id") @db.Uuid
+  districtId    String?   @map("district_id") @db.Uuid
+  chiefdomId    String?   @map("chiefdom_id") @db.Uuid
+  wardId        String?   @map("ward_id") @db.Uuid
+  communityId   String?   @map("community_id") @db.Uuid
+  latitude      Decimal?  @db.Decimal(9, 6)
+  longitude     Decimal?  @db.Decimal(9, 6)
+  isPrimary     Boolean   @default(true) @map("is_primary")
+  validFrom     DateTime? @map("valid_from") @db.Date
+  validTo       DateTime? @map("valid_to") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+  district    District?   @relation(fields: [districtId], references: [id])
+  chiefdom    Chiefdom?   @relation(fields: [chiefdomId], references: [id])
+  ward        Ward?       @relation(fields: [wardId], references: [id])
+  community   Community?  @relation(fields: [communityId], references: [id])
+
+  @@index([beneficiaryId])
+  @@index([districtId])
+  @@index([chiefdomId])
+  @@map("beneficiary_locations")
+  @@schema("beneficiaries")
+}
+
+model BeneficiaryValueChain {
+  id            String    @id @default(uuid()) @db.Uuid
+  beneficiaryId String    @map("beneficiary_id") @db.Uuid
+  valueChainId  String    @map("value_chain_id") @db.Uuid
+  role          String?
+  isPrimary     Boolean   @default(false) @map("is_primary")
+  enrolledOn    DateTime? @map("enrolled_on") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+  valueChain  ValueChain  @relation(fields: [valueChainId], references: [id])
+
+  @@unique([beneficiaryId, valueChainId])
+  @@index([valueChainId])
+  @@map("beneficiary_value_chains")
+  @@schema("beneficiaries")
+}
+
+model FarmerGroup {
+  id             String    @id @default(uuid()) @db.Uuid
+  code           String    @unique
+  name           String
+  organizationId String?   @map("organization_id") @db.Uuid
+  groupType      String?   @map("group_type")
+  districtId     String?   @map("district_id") @db.Uuid
+  chiefdomId     String?   @map("chiefdom_id") @db.Uuid
+  registeredOn   DateTime? @map("registered_on") @db.Date
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization?       @relation(fields: [organizationId], references: [id])
+  members      FarmerGroupMember[]
+
+  @@index([districtId])
+  @@map("farmer_groups")
+  @@schema("beneficiaries")
+}
+
+model FarmerGroupMember {
+  id            String    @id @default(uuid()) @db.Uuid
+  farmerGroupId String    @map("farmer_group_id") @db.Uuid
+  beneficiaryId String    @map("beneficiary_id") @db.Uuid
+  membershipId  String?   @map("membership_id")
+  role          String?
+  joinedOn      DateTime? @map("joined_on") @db.Date
+  leftOn        DateTime? @map("left_on") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  farmerGroup FarmerGroup @relation(fields: [farmerGroupId], references: [id], onDelete: Cascade)
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+
+  @@unique([farmerGroupId, beneficiaryId])
+  @@index([beneficiaryId])
+  @@map("farmer_group_members")
+  @@schema("beneficiaries")
+}
+
+enum DuplicateMatchType {
+  deterministic
+  probable
+
+  @@schema("beneficiaries")
+}
+
+enum DuplicateReviewStatus {
+  pending
+  confirmed
+  rejected
+  merged
+
+  @@schema("beneficiaries")
+}
+
+model DuplicateCandidate {
+  id            String                @id @default(uuid()) @db.Uuid
+  primaryId     String                @map("primary_id") @db.Uuid
+  candidateId   String                @map("candidate_id") @db.Uuid
+  matchType     DuplicateMatchType    @map("match_type")
+  ruleCode      String                @map("rule_code")
+  score         Decimal               @db.Decimal(5, 4)
+  evidence      Json                  @default("{}")
+  status        DuplicateReviewStatus @default(pending)
+  reviewedBy    String?               @map("reviewed_by") @db.Uuid
+  reviewedAt    DateTime?             @map("reviewed_at")
+  reviewComment String?               @map("review_comment")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  primary   Beneficiary @relation("DuplicatePrimary", fields: [primaryId], references: [id], onDelete: Cascade)
+  candidate Beneficiary @relation("DuplicateCandidate", fields: [candidateId], references: [id], onDelete: Cascade)
+  reviewer  User?       @relation("DuplicateReviewer", fields: [reviewedBy], references: [id])
+
+  @@unique([primaryId, candidateId, ruleCode])
+  @@index([status])
+  @@index([matchType])
+  @@map("duplicate_candidates")
+  @@schema("beneficiaries")
+}
+
+/// Immutable merge lineage. Merged records are never physically deleted.
+model BeneficiaryMerge {
+  id                 String             @id @default(uuid()) @db.Uuid
+  survivorId         String             @map("survivor_id") @db.Uuid
+  mergedId           String             @map("merged_id") @db.Uuid
+  matchType          DuplicateMatchType @map("match_type")
+  ruleCode           String?            @map("rule_code")
+  decision           String
+  reviewerId         String?            @map("reviewer_id") @db.Uuid
+  /// Full snapshot of the merged record and its identifiers before the merge.
+  mergedSnapshot     Json               @map("merged_snapshot")
+  retiredIdentifiers Json               @default("[]") @map("retired_identifiers")
+  createdAt          DateTime           @default(now()) @map("created_at")
+
+  survivor Beneficiary @relation("MergeSurvivor", fields: [survivorId], references: [id])
+  merged   Beneficiary @relation("MergeMerged", fields: [mergedId], references: [id])
+  reviewer User?       @relation("MergeReviewer", fields: [reviewerId], references: [id])
+
+  @@index([survivorId])
+  @@index([mergedId])
+  @@map("beneficiary_merges")
+  @@schema("beneficiaries")
+}
+
+// ===========================================================================
+// PROJECT DELIVERY
+// ===========================================================================
+
+model Activity {
+  id                    String    @id @default(uuid()) @db.Uuid
+  code                  String    @unique
+  name                  String
+  activityType          String?   @map("activity_type")
+  reportingPeriodId     String?   @map("reporting_period_id") @db.Uuid
+  districtId            String?   @map("district_id") @db.Uuid
+  chiefdomId            String?   @map("chiefdom_id") @db.Uuid
+  valueChainId          String?   @map("value_chain_id") @db.Uuid
+  implementingPartnerId String?   @map("implementing_partner_id") @db.Uuid
+  startDate             DateTime? @map("start_date") @db.Date
+  endDate               DateTime? @map("end_date") @db.Date
+  status                String?
+  sourceImportJobId     String?   @map("source_import_job_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  reportingPeriod     ReportingPeriod?      @relation(fields: [reportingPeriodId], references: [id])
+  district            District?             @relation(fields: [districtId], references: [id])
+  chiefdom            Chiefdom?             @relation(fields: [chiefdomId], references: [id])
+  valueChain          ValueChain?           @relation(fields: [valueChainId], references: [id])
+  implementingPartner ImplementingPartner?  @relation(fields: [implementingPartnerId], references: [id])
+  participants        ActivityParticipant[]
+
+  @@index([reportingPeriodId])
+  @@index([districtId])
+  @@index([valueChainId])
+  @@map("activities")
+  @@schema("project_delivery")
+}
+
+model ActivityParticipant {
+  id            String   @id @default(uuid()) @db.Uuid
+  activityId    String   @map("activity_id") @db.Uuid
+  beneficiaryId String   @map("beneficiary_id") @db.Uuid
+  role          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  activity    Activity    @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, beneficiaryId])
+  @@index([beneficiaryId])
+  @@map("activity_participants")
+  @@schema("project_delivery")
+}
+
+model TrainingEvent {
+  id                    String    @id @default(uuid()) @db.Uuid
+  code                  String    @unique
+  title                 String
+  trainingType          String?   @map("training_type")
+  topic                 String?
+  reportingPeriodId     String?   @map("reporting_period_id") @db.Uuid
+  districtId            String?   @map("district_id") @db.Uuid
+  chiefdomId            String?   @map("chiefdom_id") @db.Uuid
+  valueChainId          String?   @map("value_chain_id") @db.Uuid
+  implementingPartnerId String?   @map("implementing_partner_id") @db.Uuid
+  startDate             DateTime? @map("start_date") @db.Date
+  endDate               DateTime? @map("end_date") @db.Date
+  durationDays          Decimal?  @map("duration_days") @db.Decimal(6, 2)
+  plannedParticipants   Int?      @map("planned_participants")
+  sourceImportJobId     String?   @map("source_import_job_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  reportingPeriod     ReportingPeriod?     @relation(fields: [reportingPeriodId], references: [id])
+  valueChain          ValueChain?          @relation(fields: [valueChainId], references: [id])
+  implementingPartner ImplementingPartner? @relation(fields: [implementingPartnerId], references: [id])
+  attendance          TrainingAttendance[]
+
+  @@index([reportingPeriodId])
+  @@index([districtId])
+  @@index([valueChainId])
+  @@map("training_events")
+  @@schema("project_delivery")
+}
+
+model TrainingAttendance {
+  id              String   @id @default(uuid()) @db.Uuid
+  trainingEventId String   @map("training_event_id") @db.Uuid
+  beneficiaryId   String   @map("beneficiary_id") @db.Uuid
+  attended        Boolean  @default(true)
+  certified       Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  trainingEvent TrainingEvent @relation(fields: [trainingEventId], references: [id], onDelete: Cascade)
+  beneficiary   Beneficiary   @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+
+  @@unique([trainingEventId, beneficiaryId])
+  @@index([beneficiaryId])
+  @@map("training_attendance")
+  @@schema("project_delivery")
+}
+
+model InputDistribution {
+  id                String    @id @default(uuid()) @db.Uuid
+  beneficiaryId     String?   @map("beneficiary_id") @db.Uuid
+  reportingPeriodId String?   @map("reporting_period_id") @db.Uuid
+  inputType         String    @map("input_type")
+  itemName          String    @map("item_name")
+  quantity          Decimal   @db.Decimal(18, 4)
+  unitOfMeasureId   String?   @map("unit_of_measure_id") @db.Uuid
+  distributedOn     DateTime? @map("distributed_on") @db.Date
+  districtId        String?   @map("district_id") @db.Uuid
+  sourceImportJobId String?   @map("source_import_job_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  beneficiary     Beneficiary?     @relation(fields: [beneficiaryId], references: [id])
+  reportingPeriod ReportingPeriod? @relation(fields: [reportingPeriodId], references: [id])
+  unitOfMeasure   UnitOfMeasure?   @relation(fields: [unitOfMeasureId], references: [id])
+
+  @@index([beneficiaryId])
+  @@index([reportingPeriodId])
+  @@map("input_distributions")
+  @@schema("project_delivery")
+}
+
+model EquipmentDistribution {
+  id                String    @id @default(uuid()) @db.Uuid
+  beneficiaryId     String?   @map("beneficiary_id") @db.Uuid
+  farmerGroupId     String?   @map("farmer_group_id") @db.Uuid
+  reportingPeriodId String?   @map("reporting_period_id") @db.Uuid
+  equipmentType     String    @map("equipment_type")
+  serialNumber      String?   @map("serial_number")
+  quantity          Int       @default(1)
+  distributedOn     DateTime? @map("distributed_on") @db.Date
+  districtId        String?   @map("district_id") @db.Uuid
+  sourceImportJobId String?   @map("source_import_job_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  beneficiary     Beneficiary?     @relation(fields: [beneficiaryId], references: [id])
+  reportingPeriod ReportingPeriod? @relation(fields: [reportingPeriodId], references: [id])
+
+  @@index([reportingPeriodId])
+  @@map("equipment_distributions")
+  @@schema("project_delivery")
+}
+
+model InfrastructureAsset {
+  id                    String    @id @default(uuid()) @db.Uuid
+  code                  String    @unique
+  name                  String
+  assetType             String    @map("asset_type")
+  status                String?
+  districtId            String?   @map("district_id") @db.Uuid
+  chiefdomId            String?   @map("chiefdom_id") @db.Uuid
+  communityId           String?   @map("community_id") @db.Uuid
+  valueChainId          String?   @map("value_chain_id") @db.Uuid
+  implementingPartnerId String?   @map("implementing_partner_id") @db.Uuid
+  reportingPeriodId     String?   @map("reporting_period_id") @db.Uuid
+  quantity              Decimal?  @db.Decimal(18, 4)
+  unitLabel             String?   @map("unit_label")
+  completionPercent     Decimal?  @map("completion_percent") @db.Decimal(5, 2)
+  commissionedOn        DateTime? @map("commissioned_on") @db.Date
+  latitude              Decimal?  @db.Decimal(9, 6)
+  longitude             Decimal?  @db.Decimal(9, 6)
+  beneficiariesServed   Int?      @map("beneficiaries_served")
+  sourceImportJobId     String?   @map("source_import_job_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  district            District?            @relation(fields: [districtId], references: [id])
+  chiefdom            Chiefdom?            @relation(fields: [chiefdomId], references: [id])
+  community           Community?           @relation(fields: [communityId], references: [id])
+  valueChain          ValueChain?          @relation(fields: [valueChainId], references: [id])
+  implementingPartner ImplementingPartner? @relation(fields: [implementingPartnerId], references: [id])
+  reportingPeriod     ReportingPeriod?     @relation(fields: [reportingPeriodId], references: [id])
+
+  @@index([districtId])
+  @@index([assetType])
+  @@index([reportingPeriodId])
+  @@map("infrastructure_assets")
+  @@schema("project_delivery")
+}
+
+// ===========================================================================
+// PRODUCTION
+// ===========================================================================
+
+model Farm {
+  id                String   @id @default(uuid()) @db.Uuid
+  code              String?  @unique
+  beneficiaryId     String?  @map("beneficiary_id") @db.Uuid
+  districtId        String?  @map("district_id") @db.Uuid
+  chiefdomId        String?  @map("chiefdom_id") @db.Uuid
+  communityId       String?  @map("community_id") @db.Uuid
+  totalAreaHa       Decimal? @map("total_area_ha") @db.Decimal(12, 4)
+  latitude          Decimal? @db.Decimal(9, 6)
+  longitude         Decimal? @db.Decimal(9, 6)
+  sourceImportJobId String?  @map("source_import_job_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  beneficiary Beneficiary? @relation(fields: [beneficiaryId], references: [id])
+  district    District?    @relation(fields: [districtId], references: [id])
+  chiefdom    Chiefdom?    @relation(fields: [chiefdomId], references: [id])
+  community   Community?   @relation(fields: [communityId], references: [id])
+  plots       FarmPlot[]
+
+  @@index([beneficiaryId])
+  @@index([districtId])
+  @@map("farms")
+  @@schema("production")
+}
+
+model FarmPlot {
+  id           String   @id @default(uuid()) @db.Uuid
+  farmId       String   @map("farm_id") @db.Uuid
+  valueChainId String?  @map("value_chain_id") @db.Uuid
+  plotLabel    String?  @map("plot_label")
+  areaHa       Decimal? @map("area_ha") @db.Decimal(12, 4)
+  latitude     Decimal? @db.Decimal(9, 6)
+  longitude    Decimal? @db.Decimal(9, 6)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  farm       Farm               @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  valueChain ValueChain?        @relation(fields: [valueChainId], references: [id])
+  production ProductionRecord[]
+  harvests   HarvestRecord[]
+
+  @@index([farmId])
+  @@index([valueChainId])
+  @@map("farm_plots")
+  @@schema("production")
+}
+
+model ProductionRecord {
+  id                String   @id @default(uuid()) @db.Uuid
+  beneficiaryId     String?  @map("beneficiary_id") @db.Uuid
+  farmPlotId        String?  @map("farm_plot_id") @db.Uuid
+  valueChainId      String   @map("value_chain_id") @db.Uuid
+  reportingPeriodId String   @map("reporting_period_id") @db.Uuid
+  season            String?
+  cultivatedAreaHa  Decimal? @map("cultivated_area_ha") @db.Decimal(12, 4)
+  quantity          Decimal? @db.Decimal(18, 4)
+  unitOfMeasureId   String?  @map("unit_of_measure_id") @db.Uuid
+  yieldPerHa        Decimal? @map("yield_per_ha") @db.Decimal(18, 4)
+  districtId        String?  @map("district_id") @db.Uuid
+  sourceImportJobId String?  @map("source_import_job_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  beneficiary     Beneficiary?    @relation(fields: [beneficiaryId], references: [id])
+  farmPlot        FarmPlot?       @relation(fields: [farmPlotId], references: [id])
+  valueChain      ValueChain      @relation(fields: [valueChainId], references: [id])
+  reportingPeriod ReportingPeriod @relation(fields: [reportingPeriodId], references: [id])
+  unitOfMeasure   UnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id])
+
+  @@index([reportingPeriodId, valueChainId])
+  @@index([districtId])
+  @@index([beneficiaryId])
+  @@map("production_records")
+  @@schema("production")
+}
+
+model HarvestRecord {
+  id                String    @id @default(uuid()) @db.Uuid
+  beneficiaryId     String?   @map("beneficiary_id") @db.Uuid
+  farmPlotId        String?   @map("farm_plot_id") @db.Uuid
+  valueChainId      String    @map("value_chain_id") @db.Uuid
+  reportingPeriodId String    @map("reporting_period_id") @db.Uuid
+  harvestDate       DateTime? @map("harvest_date") @db.Date
+  quantity          Decimal   @db.Decimal(18, 4)
+  unitOfMeasureId   String?   @map("unit_of_measure_id") @db.Uuid
+  postHarvestLoss   Decimal?  @map("post_harvest_loss") @db.Decimal(18, 4)
+  districtId        String?   @map("district_id") @db.Uuid
+  sourceImportJobId String?   @map("source_import_job_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  beneficiary     Beneficiary?    @relation(fields: [beneficiaryId], references: [id])
+  farmPlot        FarmPlot?       @relation(fields: [farmPlotId], references: [id])
+  valueChain      ValueChain      @relation(fields: [valueChainId], references: [id])
+  reportingPeriod ReportingPeriod @relation(fields: [reportingPeriodId], references: [id])
+  unitOfMeasure   UnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id])
+
+  @@index([reportingPeriodId, valueChainId])
+  @@map("harvest_records")
+  @@schema("production")
+}
+
+model SalesRecord {
+  id                String    @id @default(uuid()) @db.Uuid
+  beneficiaryId     String?   @map("beneficiary_id") @db.Uuid
+  valueChainId      String    @map("value_chain_id") @db.Uuid
+  reportingPeriodId String    @map("reporting_period_id") @db.Uuid
+  saleDate          DateTime? @map("sale_date") @db.Date
+  quantity          Decimal   @db.Decimal(18, 4)
+  unitOfMeasureId   String?   @map("unit_of_measure_id") @db.Uuid
+  unitPrice         Decimal?  @map("unit_price") @db.Decimal(18, 4)
+  totalValue        Decimal?  @map("total_value") @db.Decimal(18, 2)
+  currency          String    @default("SLE")
+  buyerType         String?   @map("buyer_type")
+  districtId        String?   @map("district_id") @db.Uuid
+  sourceImportJobId String?   @map("source_import_job_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  beneficiary     Beneficiary?    @relation(fields: [beneficiaryId], references: [id])
+  valueChain      ValueChain      @relation(fields: [valueChainId], references: [id])
+  reportingPeriod ReportingPeriod @relation(fields: [reportingPeriodId], references: [id])
+  unitOfMeasure   UnitOfMeasure?  @relation(fields: [unitOfMeasureId], references: [id])
+
+  @@index([reportingPeriodId, valueChainId])
+  @@map("sales_records")
+  @@schema("production")
+}
+
+// ===========================================================================
+// MONITORING — indicator registry, targets, observations
+// ===========================================================================
+
+enum ResultLevel {
+  impact
+  outcome
+  output
+  activity
+  input
+
+  @@schema("monitoring")
+}
+
+model Indicator {
+  id                  String          @id @default(uuid()) @db.Uuid
+  code                String          @unique
+  name                String
+  shortName           String?         @map("short_name")
+  definition          String?
+  description         String?
+  unit                String?
+  resultLevel         ResultLevel     @default(output) @map("result_level")
+  calculationMethod   String?         @map("calculation_method")
+  /// Declarative calculation reference resolved by the analytics layer.
+  calculationRef      String?         @map("calculation_ref")
+  calculationVersion  Int             @default(1) @map("calculation_version")
+  frequency           UpdateFrequency @default(quarterly)
+  responsibleUnit     String?         @map("responsible_unit")
+  primaryDataSourceId String?         @map("primary_data_source_id") @db.Uuid
+  isActive            Boolean         @default(true) @map("is_active")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+  createdBy           String?         @map("created_by") @db.Uuid
+  updatedBy           String?         @map("updated_by") @db.Uuid
+
+  primaryDataSource DataSource?               @relation(fields: [primaryDataSourceId], references: [id])
+  disaggregations   IndicatorDisaggregation[]
+  targets           IndicatorTarget[]
+  observations      IndicatorObservation[]
+
+  @@index([resultLevel])
+  @@index([isActive])
+  @@map("indicators")
+  @@schema("monitoring")
+}
+
+enum DisaggregationDimension {
+  sex
+  age_group
+  district
+  chiefdom
+  value_chain
+  reporting_period
+  beneficiary_type
+
+  @@schema("monitoring")
+}
+
+model IndicatorDisaggregation {
+  id          String                  @id @default(uuid()) @db.Uuid
+  indicatorId String                  @map("indicator_id") @db.Uuid
+  dimension   DisaggregationDimension
+  isRequired  Boolean                 @default(false) @map("is_required")
+  createdAt   DateTime                @default(now()) @map("created_at")
+
+  indicator Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([indicatorId, dimension])
+  @@map("indicator_disaggregations")
+  @@schema("monitoring")
+}
+
+model IndicatorTarget {
+  id                String   @id @default(uuid()) @db.Uuid
+  indicatorId       String   @map("indicator_id") @db.Uuid
+  reportingPeriodId String?  @map("reporting_period_id") @db.Uuid
+  fiscalYear        Int?     @map("fiscal_year")
+  districtId        String?  @map("district_id") @db.Uuid
+  valueChainId      String?  @map("value_chain_id") @db.Uuid
+  targetValue       Decimal  @map("target_value") @db.Decimal(18, 4)
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdBy         String?  @map("created_by") @db.Uuid
+
+  indicator       Indicator        @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  reportingPeriod ReportingPeriod? @relation(fields: [reportingPeriodId], references: [id])
+  district        District?        @relation(fields: [districtId], references: [id])
+  valueChain      ValueChain?      @relation(fields: [valueChainId], references: [id])
+
+  @@unique([indicatorId, reportingPeriodId, districtId, valueChainId])
+  @@index([indicatorId])
+  @@map("indicator_targets")
+  @@schema("monitoring")
+}
+
+/// Manually reported or externally supplied indicator values. Values derived
+/// from published AVDP data are computed in the analytics layer instead.
+model IndicatorObservation {
+  id                  String   @id @default(uuid()) @db.Uuid
+  indicatorId         String   @map("indicator_id") @db.Uuid
+  reportingPeriodId   String   @map("reporting_period_id") @db.Uuid
+  districtId          String?  @map("district_id") @db.Uuid
+  valueChainId        String?  @map("value_chain_id") @db.Uuid
+  sex                 String?
+  ageGroup            String?  @map("age_group")
+  value               Decimal  @db.Decimal(18, 4)
+  calculationVersion  Int      @default(1) @map("calculation_version")
+  publicationRecordId String?  @map("publication_record_id") @db.Uuid
+  sourceImportJobId   String?  @map("source_import_job_id") @db.Uuid
+  observedAt          DateTime @default(now()) @map("observed_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  createdBy           String?  @map("created_by") @db.Uuid
+
+  indicator       Indicator       @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  reportingPeriod ReportingPeriod @relation(fields: [reportingPeriodId], references: [id])
+  district        District?       @relation(fields: [districtId], references: [id])
+  valueChain      ValueChain?     @relation(fields: [valueChainId], references: [id])
+
+  @@index([indicatorId, reportingPeriodId])
+  @@index([districtId])
+  @@map("indicator_observations")
+  @@schema("monitoring")
+}
+
+// ===========================================================================
+// ANALYTICS — refresh bookkeeping for the published-data views
+// ===========================================================================
+
+model AnalyticsRefreshLog {
+  id           String    @id @default(uuid()) @db.Uuid
+  viewName     String    @map("view_name")
+  status       String    @default("running")
+  trigger      String    @default("manual")
+  rowCount     Int?      @map("row_count")
+  durationMs   Int?      @map("duration_ms")
+  errorMessage String?   @map("error_message")
+  startedAt    DateTime  @default(now()) @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  triggeredBy  String?   @map("triggered_by") @db.Uuid
+
+  @@index([viewName, startedAt])
+  @@map("analytics_refresh_log")
+  @@schema("analytics")
+}
