@@ -55,6 +55,7 @@ src/
     api/admin/              Data Manager operations (session + permission gated)
   data/                     dashboard data-provider abstraction
     types.ts                the dashboard contract
+    dashboard-service.ts    the only place that fetches, catches and classifies
     mock/fixtures.ts        retained prototype fixtures
     providers/mock.ts       MockDashboardDataProvider
     providers/live.ts       LiveDashboardDataProvider
@@ -76,11 +77,14 @@ prisma/                     schema, migrations, seeds
 src/data/mock/fixtures.ts
   → MockDashboardDataProvider
     → getDashboardProvider()   (selects by DATA_MODE)
-      → src/app/page.tsx and its components
+      → src/data/dashboard-service.ts   (fetch, catch, classify)
+        → src/app/page.tsx sections
 ```
 
-Dashboard components receive plain contract types. They cannot tell whether the numbers
-came from fixtures or from the live API, and they never import fixtures directly.
+Dashboard components receive a resolved `SectionResult` — `ok`, `empty` or `unavailable` —
+and plain contract types. They cannot tell whether the numbers came from fixtures or from
+the live API, they never import fixtures directly, and they never call a provider or catch
+an error themselves.
 
 ## Major data domains
 
@@ -112,12 +116,17 @@ came from fixtures or from the live API, and they never import fixtures directly
    building integrations without API specifications).
 6. **The dashboard has no map component.** District data carries coordinates and the API
    serves them; a choropleth or point map can be added without touching the data layer.
+7. **Section streaming is server-side only.** Sections stream independently through
+   Suspense, but filter changes are full navigations. Client-side transitions would need a
+   router-level loading treatment.
 
 ## Components that should remain unchanged
 
 - `src/data/types.ts` — the dashboard contract. Changing it ripples into both providers.
 - `src/data/mock/fixtures.ts` — retained until live AVDP data is approved and published.
 - `src/modules/approval/workflow.ts` — the single authority on workflow legality.
+- `src/data/dashboard-service.ts` — the single place dashboard data is fetched and
+  classified. Fetching from a component would reintroduce the duplication it removes.
 - The analytics views' "published only" join. Loosening it would let unapproved data reach
   the dashboard.
 

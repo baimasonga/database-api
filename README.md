@@ -146,5 +146,11 @@ rows composed from named permissions, so new roles can be created without a depl
 ## Data mode
 
 The dashboard runs on retained mock fixtures until live AVDP datasets are approved and
-published. In `DATA_MODE=live`, an API failure shows an explicit "Data temporarily
-unavailable" state — fictitious values are never substituted for live data.
+published. `DATA_MODE=live` switches it to `/api/v1`; any other value resolves to mock, so
+a misconfiguration cannot fail open to live.
+
+All dashboard data loads through `src/data/dashboard-service.ts`, and every section
+resolves to one of four states — loading (skeleton), loaded, empty ("no published data for
+the selected filters") or unavailable ("data temporarily unavailable"). Fictitious values
+are never substituted for live data, an all-zero result is reported as empty rather than
+as a row of zeros, and a failing section never blanks the rest of the page.

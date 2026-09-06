@@ -106,9 +106,33 @@ version. It exposes dataset-level provenance only — never row-level beneficiar
 information. Lineage failures are caught per indicator, so a missing lineage record can
 never blank the dashboard.
 
-## Data mode
+## Data mode and dashboard section states
 
 `DATA_MODE=mock` serves the retained prototype fixtures; `DATA_MODE=live` consumes
-`/api/v1` at `DASHBOARD_API_BASE_URL`. In live mode an API failure raises
-`DashboardDataUnavailable` and the dashboard shows an explicit "Data temporarily
-unavailable" state — it never silently substitutes fictitious values.
+`/api/v1` at `DASHBOARD_API_BASE_URL`. Any value other than `live` resolves to mock, so a
+misconfiguration cannot silently fail open to live.
+
+All dashboard data is loaded through `src/data/dashboard-service.ts`, the single place
+that fetches, catches and classifies. Each section resolves to exactly one of four states:
+
+| State | When | What the user sees |
+| --- | --- | --- |
+| **Loading** | The section is still streaming | A skeleton matching the section's final layout, so nothing shifts |
+| **Loaded** | Data returned and is non-empty | The figures |
+| **Empty** | The request succeeded but nothing is published for the filters | "No published data for the selected filters", naming the reporting period |
+| **Unavailable** | Live mode could not reach the API | "Data temporarily unavailable", with the endpoint — never a substituted figure |
+
+Two distinctions matter:
+
+- **Empty is not zero.** An all-zero result means nothing has been published yet, not that
+  the project delivered nothing. Rendering a row of zeros would misrepresent the
+  programme, so the section says which state it is in.
+- **Failure is isolated.** A failing section renders its own unavailable state; the rest of
+  the dashboard still shows its data. One slow or broken endpoint cannot blank the page.
+
+Indicator lineage is supplementary, so a lineage failure resolves to `null` and the KPI it
+annotates renders normally.
+
+Sections stream independently through React Suspense. `src/app/loading.tsx` provides the
+route-level skeleton and `src/app/error.tsx` is a last-resort boundary for genuine
+defects — it shows no figures at all, because their accuracy cannot be confirmed.
