@@ -22,6 +22,12 @@ Every view lives in the `analytics` schema and joins through
 | `analytics_indicator_performance` | Indicator × period × district × value chain |
 | `analytics_data_quality_summary` | Source × dataset × period |
 
+The Data Manager home screen reads through `src/modules/analytics/data-manager-home.ts`,
+which also builds the data quality trend — validation pass rate per reporting period,
+oldest first. Periods with no imports are omitted rather than plotted as zero, and a
+period with no rows reports a null pass rate rather than a misleading 0%. Headline counts
+are counted directly, never derived from the length of a preview list.
+
 Every view carries `last_published_at` and `calculated_at`, so any figure can state which
 publication produced it and when it was computed.
 

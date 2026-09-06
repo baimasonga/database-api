@@ -124,6 +124,12 @@ Sources, Datasets, Imports, Data Mapping (within an import), Data Quality, Benef
 Identity, Master Data, Indicators, Reporting Periods, Approval Workflow, Published Data,
 Integrations, Audit Logs, Administration.
 
+Its home screen is a governance and feed-health view: source, dataset and import counts
+for the period, work awaiting review or approval, unresolved validation errors, the data
+quality score and its trend across reporting periods, recent imports, sources requiring
+attention, and the latest successful import and publication. It deliberately carries no
+operational modules — those belong in the AVDP source systems.
+
 **Dashboard API** (`/api/v1`) — read-only, versioned, documented at `/api/v1/openapi`.
 
 ## Roles

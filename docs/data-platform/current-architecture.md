@@ -65,7 +65,7 @@ src/
     quality/                validation rules and engine
     identity/               beneficiary references and duplicate matching
     approval/               workflow state machine, materialisation, service
-    analytics/              analytics read model and refresh
+    analytics/              analytics read model, refresh, Data Manager home model
     integrations/           connector registry (framework)
   lib/                      env, db, auth, audit, API envelope, rate limiting
 prisma/                     schema, migrations, seeds
