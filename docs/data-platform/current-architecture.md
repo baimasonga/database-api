@@ -50,7 +50,7 @@ src/
   app/                      routes
     page.tsx                public AVDP dashboard
     login/                  authentication
-    data-manager/           internal AVDP Data Manager (14 areas)
+    data-manager/           internal AVDP Data Manager (15 areas)
     api/v1/                 versioned read-only Dashboard API
     api/admin/              Data Manager operations (session + permission gated)
   data/                     dashboard data-provider abstraction
@@ -65,6 +65,7 @@ src/
     quality/                validation rules and engine
     identity/               beneficiary references and duplicate matching
     approval/               workflow state machine, materialisation, service
+    governance/             onboarding status system, inventory mapping
     analytics/              analytics read model, refresh, Data Manager home model
     integrations/           connector registry (framework)
   lib/                      env, db, auth, audit, API envelope, rate limiting

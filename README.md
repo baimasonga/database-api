@@ -120,9 +120,9 @@ target, geographic coverage, value chain and infrastructure breakdowns, with an 
 this indicator" lineage disclosure on each headline KPI.
 
 **AVDP Data Manager** (`/data-manager`) — internal, authenticated: Dashboard, Data
-Sources, Datasets, Imports, Data Mapping (within an import), Data Quality, Beneficiary
-Identity, Master Data, Indicators, Reporting Periods, Approval Workflow, Published Data,
-Integrations, Audit Logs, Administration.
+Sources, Datasets, Onboarding, Imports, Data Mapping (within an import), Data Quality,
+Beneficiary Identity, Master Data, Indicators, Reporting Periods, Approval Workflow,
+Published Data, Integrations, Audit Logs, Administration.
 
 Its home screen is a governance and feed-health view: source, dataset and import counts
 for the period, work awaiting review or approval, unresolved validation errors, the data

@@ -8,6 +8,7 @@ const NAV = [
   { href: "/data-manager", label: "Dashboard" },
   { href: "/data-manager/sources", label: "Data Sources" },
   { href: "/data-manager/datasets", label: "Datasets" },
+  { href: "/data-manager/onboarding", label: "Onboarding" },
   { href: "/data-manager/imports", label: "Imports" },
   { href: "/data-manager/quality", label: "Data Quality" },
   { href: "/data-manager/duplicates", label: "Beneficiary Identity" },

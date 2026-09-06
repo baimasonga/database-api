@@ -9,6 +9,7 @@ import { qualityScore, validateRows, type RowInput } from "@/modules/quality/eng
 import { hashRow, profileTable } from "./profile";
 import { parseTable } from "./parse";
 import { readStoredFile, storeUpload } from "./storage";
+import { recordOnboardingEvent } from "@/modules/governance/onboarding-service";
 
 export class DuplicateImportError extends Error {
   constructor(readonly existingImportJobId: string) {
@@ -126,6 +127,9 @@ export async function createImportJob(input: CreateImportInput): Promise<string>
       where: { id: input.dataSourceId },
       data: { lastReceivedAt: new Date() },
     });
+
+    // The schema is now known, so the dataset is at least "assessed".
+    await recordOnboardingEvent(input.datasetId, "profiled", tx);
 
     return job.id;
   });
@@ -271,6 +275,13 @@ export async function runValidation(importJobId: string): Promise<ValidationOutc
       },
     });
   });
+
+  // Mapping was complete enough to validate, and validation has now run.
+  await recordOnboardingEvent(job.datasetId, "mapped");
+  await recordOnboardingEvent(job.datasetId, "validation_run");
+  if (status === "ready_for_review") {
+    await recordOnboardingEvent(job.datasetId, "validation_clean");
+  }
 
   return {
     status,

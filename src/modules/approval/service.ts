@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from "@/lib/auth/session";
 import { canTransition, type ImportStatus, type WorkflowAction } from "./workflow";
 import { materialiseImport } from "./materialise";
 import { refreshAnalytics } from "@/modules/analytics/refresh";
+import { recordOnboardingEvent } from "@/modules/governance/onboarding-service";
 
 export class WorkflowError extends Error {
   constructor(message: string, readonly status = 409) {
@@ -157,8 +158,9 @@ export async function performWorkflowAction(
 
         await tx.dataSource.update({
           where: { id: job.dataSourceId },
-          data: { lastSuccessfulImportAt: new Date(), onboardingStatus: "live" },
+          data: { lastSuccessfulImportAt: new Date() },
         });
+        await recordOnboardingEvent(job.datasetId, "published", tx);
       }
 
       if (action === "unpublish") {
@@ -166,6 +168,10 @@ export async function performWorkflowAction(
           where: { importJobId, status: "published" },
           data: { status: "withdrawn", withdrawnAt: new Date() },
         });
+      }
+
+      if (action === "approve") {
+        await recordOnboardingEvent(job.datasetId, "approved", tx);
       }
 
       await tx.importJob.update({

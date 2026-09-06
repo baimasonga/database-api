@@ -16,8 +16,27 @@ figures appear on the dashboard through a published, validated import.
 | `approved` | The M&E Approver has approved the import |
 | `live` | Published, feeding the analytics layer and the dashboard |
 
-Both `data_sources` and `datasets` carry this status, and it is visible in the Data
-Manager.
+Both `data_sources` and `datasets` carry this status, and the pipeline is visible at
+**Data Manager → Onboarding**, which shows how many datasets sit at each stage and what
+the next step is for each one.
+
+**Status advances by itself.** The lifecycle sets it, so a source cannot sit at
+`discovered` while its data is already being validated:
+
+| Event | Status becomes |
+| --- | --- |
+| Source or dataset registered | `discovered` |
+| File uploaded and profiled | `assessed` |
+| Columns mapped and validation run | `mapped`, then `tested` |
+| Validation completes with no unresolved errors | `validated` |
+| Import approved | `approved` |
+| Import published | `live` |
+
+Progress is monotonic — a later import for an already-live source never drags its status
+backwards, and a failing validation stops at `tested` rather than reaching `validated`. A
+source is only as far along as the furthest dataset it owns. Authorised staff can still
+set the status by hand where the lifecycle does not tell the whole story; that is a
+deliberate act, not a side effect.
 
 ## The eleven steps
 
@@ -88,8 +107,15 @@ npx tsx scripts/register-sources.ts docs/data-platform/source-inventory-template
 # add --commit to write; without it the script only reports what it would do
 ```
 
-The script creates sources and datasets at status `discovered`. It never uploads,
-validates or publishes anything.
+The script creates sources and datasets at status `discovered` — the inventory records
+that a dataset exists, never that it has been assessed. It never uploads, validates or
+publishes anything. Rows with no Source Name are skipped and reported; sources that
+already exist are left untouched, so the script is safe to re-run as the inventory grows.
+
+Row mapping (file type to source type, integration method to connection type, frequency
+spellings, domain inference, personal-data classification) lives in
+`src/modules/governance/inventory.ts` and is unit-tested, so a malformed inventory fails
+predictably rather than registering something wrong.
 
 ## What not to do
 

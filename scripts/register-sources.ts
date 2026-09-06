@@ -1,6 +1,7 @@
 /**
  * Bulk registration of known data sources from the inventory CSV (Phase 14).
- * Registers metadata only — it never uploads, validates or publishes data.
+ * Registers metadata only — it never uploads, validates or publishes data, and
+ * everything it creates starts at onboarding status `discovered`.
  *
  *   npx tsx scripts/register-sources.ts <inventory.csv> [--commit]
  *
@@ -9,107 +10,62 @@
 import { readFile } from "node:fs/promises";
 import { PrismaClient } from "@prisma/client";
 import { parse } from "csv-parse/sync";
+import {
+  InventoryRowError,
+  planFromInventoryRow,
+  type InventoryRow,
+} from "../src/modules/governance/inventory";
 
 const prisma = new PrismaClient();
-
-type Row = Record<string, string>;
-
-const SOURCE_TYPE_BY_FILE: Record<string, string> = {
-  XLSX: "excel", XLS: "excel", CSV: "csv", ODK: "odk", KOBO: "kobo",
-  API: "api", DB: "database", DATABASE: "database", GIS: "gis",
-};
-
-const FREQUENCIES: Record<string, string> = {
-  DAILY: "daily", WEEKLY: "weekly", MONTHLY: "monthly", QUARTERLY: "quarterly",
-  "SEMI-ANNUAL": "semi_annual", ANNUAL: "annual", "AD HOC": "ad_hoc",
-};
-
-const CONNECTION_BY_METHOD: Record<string, string> = {
-  UPLOAD: "upload", API: "api", DATABASE: "database", SCHEDULED: "scheduled", MANUAL: "manual",
-};
-
-function slug(value: string, prefix: string): string {
-  const body = value.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
-  return `${prefix}-${body}`;
-}
-
-function domainFor(row: Row): string {
-  const text = `${row["Description"] ?? ""} ${row["Source Name"] ?? ""}`.toLowerCase();
-  if (text.includes("training") || text.includes("attendance")) return "training";
-  if (text.includes("infrastructure") || text.includes("works") || text.includes("asset")) return "infrastructure";
-  if (text.includes("production") || text.includes("harvest") || text.includes("yield")) return "production";
-  if (row["Contains Beneficiary Data"]?.toUpperCase() === "YES") return "beneficiaries";
-  return "other";
-}
-
-const yes = (value: string | undefined) => (value ?? "").trim().toUpperCase() === "YES";
 
 async function main() {
   const [file, ...flags] = process.argv.slice(2);
   if (!file) throw new Error("Usage: npx tsx scripts/register-sources.ts <inventory.csv> [--commit]");
   const commit = flags.includes("--commit");
 
-  const rows = parse(await readFile(file), { bom: true, columns: true, skip_empty_lines: true, trim: true }) as Row[];
+  const rows = parse(await readFile(file), {
+    bom: true,
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+  }) as InventoryRow[];
+
   console.log(`${rows.length} inventory row(s)${commit ? "" : " — dry run, nothing will be written"}\n`);
 
   let created = 0;
   let skipped = 0;
 
   for (const row of rows) {
-    const name = row["Source Name"];
-    if (!name) {
-      console.log("  skipped: row has no Source Name");
+    let plan;
+    try {
+      plan = planFromInventoryRow(row);
+    } catch (error) {
+      console.log(`  skipped: ${error instanceof InventoryRowError ? error.message : String(error)}`);
       skipped += 1;
       continue;
     }
 
-    const sourceCode = slug(name, "SRC");
-    const sourceType = SOURCE_TYPE_BY_FILE[(row["File Type"] ?? "").toUpperCase()] ?? "other";
-    const connectionType = CONNECTION_BY_METHOD[(row["Integration Method"] ?? "").toUpperCase()] ?? "upload";
-    const frequency = FREQUENCIES[(row["Frequency"] ?? "").toUpperCase()] ?? "ad_hoc";
-    const personal = yes(row["Contains Personal Data"]);
-
-    const existing = await prisma.dataSource.findUnique({ where: { code: sourceCode } });
+    const existing = await prisma.dataSource.findUnique({ where: { code: plan.source.code } });
     if (existing) {
-      console.log(`  exists:  ${sourceCode}  ${name}`);
+      console.log(`  exists:  ${plan.source.code}  ${plan.source.name}`);
       skipped += 1;
       continue;
     }
 
-    console.log(`  create:  ${sourceCode}  ${name}  [${sourceType}/${connectionType}/${frequency}${personal ? ", personal data" : ""}]`);
+    const { sourceType, connectionType, frequency, containsPersonalData } = plan.source;
+    console.log(
+      `  create:  ${plan.source.code}  ${plan.source.name}  ` +
+        `[${sourceType}/${connectionType}/${frequency}${containsPersonalData ? ", personal data" : ""}]` +
+        `  → dataset ${plan.dataset.code} (${plan.dataset.domain})`,
+    );
     created += 1;
     if (!commit) continue;
 
     const source = await prisma.dataSource.create({
-      data: {
-        code: sourceCode,
-        name,
-        description: row["Description"] || null,
-        ownerUnit: row["Owning Unit"] || null,
-        sourceType: sourceType as never,
-        connectionType: connectionType as never,
-        frequency: frequency as never,
-        status: "active",
-        dataClassification: personal ? "confidential" : "internal",
-        containsPersonalData: personal,
-        repositoryLocation: row["Repository Location"] || null,
-        notes: [row["Known Quality Issues"], row["Notes"]].filter(Boolean).join(" | ") || null,
-        onboardingStatus: "discovered",
-      },
+      data: { ...plan.source, status: "active", onboardingStatus: "discovered" },
     });
-
     await prisma.dataset.create({
-      data: {
-        dataSourceId: source.id,
-        code: slug(name, "DS"),
-        name: row["File Name"] || name,
-        description: row["Description"] || null,
-        domain: domainFor(row) as never,
-        ownerUnit: row["Owning Unit"] || null,
-        primaryIdentifier: row["Primary Identifier"] || null,
-        frequency: frequency as never,
-        onboardingStatus: "discovered",
-      },
+      data: { ...plan.dataset, dataSourceId: source.id, onboardingStatus: "discovered" },
     });
   }
 
