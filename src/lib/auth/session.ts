@@ -47,6 +47,19 @@ export async function destroySession(): Promise<void> {
   store.delete(SESSION_COOKIE);
 }
 
+/**
+ * Deletes revoked and long-expired sessions. Expired sessions are already
+ * refused by resolveUserFromToken; this keeps the table from growing without
+ * bound. Safe to call repeatedly and from any instance.
+ */
+export async function pruneExpiredSessions(olderThanDays = 7): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 3600 * 1000);
+  const { count } = await prisma.session.deleteMany({
+    where: { OR: [{ expiresAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }] },
+  });
+  return count;
+}
+
 /** Resolves the current user, or null when unauthenticated. Never throws. */
 export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   const store = await cookies();

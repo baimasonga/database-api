@@ -2,12 +2,14 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 import { Badge, formatDate, formatNumber, statusTone } from "@/components/ui";
 import { RefreshAnalyticsButton } from "./refresh-button";
 
 export const dynamic = "force-dynamic";
 
 export default async function PublishedDataPage() {
+  await requirePermission(PERMISSIONS.IMPORT_READ);
   const [user, publications, refreshLog] = await Promise.all([
     getCurrentUser(),
     prisma.publicationRecord.findMany({

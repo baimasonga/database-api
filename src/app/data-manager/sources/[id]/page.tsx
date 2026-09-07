@@ -2,10 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { Badge, KpiCard, formatDate, formatNumber, statusTone } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function DataSourceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermission(PERMISSIONS.SOURCE_READ);
   const { id } = await params;
   const source = await prisma.dataSource.findUnique({
     where: { id },

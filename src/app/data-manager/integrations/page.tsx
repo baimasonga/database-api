@@ -4,6 +4,7 @@ import { CONNECTORS, isImplemented, type ConnectorType } from "@/modules/integra
 import { secretsConfigured } from "@/modules/integrations/secrets";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 import { IntegrationActions } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export const dynamic = "force-dynamic";
  * become available. All connector output enters the same ingestion pipeline.
  */
 export default async function IntegrationsPage() {
+  await requirePermission(PERMISSIONS.INTEGRATION_READ);
   const [user, integrations, runs, datasets, periods] = await Promise.all([
     getCurrentUser(),
     prisma.integration.findMany({

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { Badge, KpiCard, formatNumber } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,7 @@ function one(value: string | string[] | undefined) {
 }
 
 export default async function DataQualityPage({ searchParams }: PageProps) {
+  await requirePermission(PERMISSIONS.QUALITY_READ);
   const params = await searchParams;
   const severity = one(params.severity);
   const sourceId = one(params.source);

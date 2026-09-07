@@ -2,6 +2,8 @@ import Link from "next/link";
 import { loadDataManagerHome } from "@/modules/analytics/data-manager-home";
 import { QualityTrend } from "@/components/quality-trend";
 import { Badge, KpiCard, formatDate, formatNumber, statusTone } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +12,7 @@ export const dynamic = "force-dynamic";
  * no procurement, finance, HR or other operational modules belong here.
  */
 export default async function DataManagerHome() {
+  await requirePermission(PERMISSIONS.SOURCE_READ);
   const home = await loadDataManagerHome();
 
   return (

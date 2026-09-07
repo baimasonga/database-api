@@ -1,9 +1,12 @@
 import { prisma } from "@/lib/db";
 import { KpiCard, formatNumber } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function MasterDataPage() {
+  await requirePermission(PERMISSIONS.SOURCE_READ);
   const [districts, valueChains, units, partners, organizations, lookupSets] = await Promise.all([
     prisma.district.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { chiefdoms: true } } } }),
     prisma.valueChain.findMany({ orderBy: { name: "asc" } }),

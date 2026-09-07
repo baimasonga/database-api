@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 import { KpiCard, formatDate, formatNumber } from "@/components/ui";
 import { DuplicateReview } from "./review";
 
 export const dynamic = "force-dynamic";
 
 export default async function DuplicatesPage() {
+  await requirePermission(PERMISSIONS.BENEFICIARY_READ);
   const user = await getCurrentUser();
   const [pending, confirmedCount, rejectedCount, merges, beneficiaryCount] = await Promise.all([
     prisma.duplicateCandidate.findMany({

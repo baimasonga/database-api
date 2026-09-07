@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { Badge, KpiCard, formatDate, formatNumber, statusTone } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function DataSourcesPage() {
+  await requirePermission(PERMISSIONS.SOURCE_READ);
   const currentPeriod = await prisma.reportingPeriod.findFirst({ where: { status: "open" }, orderBy: { startDate: "desc" } });
   const [sources, datasetCount, importsThisPeriod] = await Promise.all([
     prisma.dataSource.findMany({

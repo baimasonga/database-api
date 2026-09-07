@@ -4,10 +4,13 @@ import { prisma } from "@/lib/db";
 import { getIndicatorPerformance, resolveFilters } from "@/modules/analytics/queries";
 import { DOMAIN_LABELS, indicatorLineage } from "@/modules/analytics/lineage";
 import { Badge, KpiCard, ProgressBar, formatDate, formatNumber } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function IndicatorDetailPage({ params }: { params: Promise<{ code: string }> }) {
+  await requirePermission(PERMISSIONS.INDICATOR_READ);
   const { code } = await params;
   const indicator = await prisma.indicator.findUnique({
     where: { code: decodeURIComponent(code) },

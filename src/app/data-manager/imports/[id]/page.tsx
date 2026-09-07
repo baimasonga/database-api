@@ -8,6 +8,8 @@ import { Badge, KpiCard, formatDate, formatNumber, statusTone } from "@/componen
 import { MappingGrid } from "./mapping-grid";
 import { WorkflowPanel } from "./workflow-panel";
 import { FindingsTable } from "./findings-table";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,7 @@ interface ColumnProfile {
 }
 
 export default async function ImportDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermission(PERMISSIONS.IMPORT_READ);
   const { id } = await params;
   const [user, job] = await Promise.all([
     getCurrentUser(),

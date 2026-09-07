@@ -2,10 +2,13 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { NewImportForm } from "./form";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewImportPage() {
+  await requirePermission(PERMISSIONS.IMPORT_WRITE);
   const [sources, datasets, periods] = await Promise.all([
     prisma.dataSource.findMany({ where: { archivedAt: null, status: { not: "inactive" } }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.dataset.findMany({ where: { archivedAt: null, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, dataSourceId: true, domain: true } }),

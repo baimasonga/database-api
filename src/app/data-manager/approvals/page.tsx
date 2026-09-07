@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { Badge, formatDate, formatNumber, statusTone } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function ApprovalsPage() {
+  await requirePermission(PERMISSIONS.IMPORT_READ);
   const requests = await prisma.approvalRequest.findMany({
     where: { status: { in: ["pending", "in_review", "returned"] } },
     orderBy: { submittedAt: "asc" },

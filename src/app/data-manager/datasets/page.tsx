@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { Badge, formatDate, formatNumber, statusTone } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function DatasetsPage() {
+  await requirePermission(PERMISSIONS.DATASET_READ);
   const datasets = await prisma.dataset.findMany({
     where: { archivedAt: null },
     orderBy: { name: "asc" },

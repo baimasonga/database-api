@@ -83,17 +83,19 @@ credentials and integration secrets never reach the browser.
 | `npm run build` / `npm start` | Production build and server |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Vitest |
+| `npm test` | Unit tests (Vitest) |
+| `npm run test:integration` | Integration tests against a real PostgreSQL database |
+| `npm run test:all` | Lint, typecheck, unit, integration and production build |
 | `npm run db:migrate` | Create and apply a migration (development) |
 | `npm run db:deploy` | Apply migrations (production) |
 | `npm run db:seed` | Seed reference data |
-| `npx tsx scripts/e2e-pipeline.ts` | End-to-end pipeline check against the dev database |
 | `npx tsx scripts/register-sources.ts <csv>` | Bulk-register sources from the inventory CSV |
 | `npx tsx scripts/generate-inventory-template.ts` | Regenerate the XLSX inventory template |
 
-`scripts/e2e-pipeline.ts` and `scripts/register-sources.ts` import server-only modules;
-run them with `NODE_OPTIONS="--conditions=react-server"` if your Node version rejects the
-`server-only` guard.
+The `scripts/` helpers import server-only modules; run them with
+`NODE_OPTIONS="--conditions=react-server"` if your Node version rejects the `server-only`
+guard. `scripts/dev/` holds development-only checks, superseded for CI by
+`npm run test:integration`.
 
 ## Migration procedure
 

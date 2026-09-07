@@ -1,9 +1,12 @@
 import { prisma } from "@/lib/db";
 import { Badge, formatDate, formatNumber } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportingPeriodsPage() {
+  await requirePermission(PERMISSIONS.SOURCE_READ);
   const periods = await prisma.reportingPeriod.findMany({
     orderBy: [{ fiscalYear: "desc" }, { startDate: "desc" }],
     include: { _count: { select: { importJobs: true, publications: true } } },

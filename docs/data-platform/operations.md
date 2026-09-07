@@ -8,12 +8,26 @@ token is stored, so a database read cannot yield a usable session. Cookies are
 Login returns the same message for an unknown account and a wrong password, so accounts
 cannot be enumerated.
 
-**Authorisation.** Every Data Manager route handler is wrapped in `withPermission()`,
-which requires a session and a named permission before the handler runs. Roles are
-database rows composed from permissions, not hard-coded strings. The approval workflow
-applies a second, finer check: `canTransition()` verifies the per-action permission *and*
-the "no unresolved errors" rule, so a coarse route permission cannot be used to publish
-bad data.
+**Authorisation.** Authorisation is enforced at three layers:
+
+1. Every Data Manager **route handler** is wrapped in `withPermission()`, which requires a
+   session and a named permission before the handler runs.
+2. Every Data Manager **page** calls `requirePermission()` and renders nothing without it.
+   The layout only proves a visitor is signed in; screens differ in sensitivity, and
+   beneficiary identity and validation findings can both contain personal data, so each
+   screen states the capability it needs.
+3. The approval workflow applies a finer check: `canTransition()` verifies the per-action
+   permission *and* the "no unresolved errors" rule, so a coarse route permission cannot be
+   used to publish bad data.
+
+Roles are database rows composed from permissions, not hard-coded strings.
+
+**Brute-force protection.** Sign-in is a server action, so the `/api` rate limiter never
+sees it. `checkLoginThrottle()` locks an account after five failures in fifteen minutes,
+counting per email *and* per client address: locking by email alone would let an attacker
+lock a colleague out, and by address alone would miss a distributed attempt on one
+account. A successful sign-in clears the count, so ordinary typos are not cumulative.
+Every failed attempt is audited.
 
 **Least privilege.** Logical modules are physical PostgreSQL schemas, so a reporting role
 can be granted `analytics` without access to `beneficiaries`.
@@ -48,7 +62,15 @@ record *that* credentials changed, never their value. No credential is ever sent
 browser.
 
 **Rate limiting.** Fixed window per client and path on `/api/v1`, with `Retry-After` on
-429.
+429. `/api/admin` is protected by session and permission checks instead; login has its own
+throttle.
+
+**Security headers.** Every response carries `X-Frame-Options: DENY`, `nosniff`, a strict
+referrer policy, a `Permissions-Policy` denying camera, microphone, geolocation, payment
+and USB, and a Content-Security-Policy limiting `default-src`, `connect-src` and
+`form-action` to `self` with `frame-ancestors 'none'` and `object-src 'none'`. HSTS is
+added in production only, where TLS is terminated. `X-Powered-By` is suppressed, and
+`/api/admin` responses are `private, no-store` so no shared proxy caches a download.
 
 **Sensitive data.** Sources and datasets carry a data classification and a
 `contains_personal_data` flag. The dashboard and its lineage endpoints expose only
@@ -125,15 +147,35 @@ Restore drills should verify that an import job's checksum still matches its sto
 
 ## Testing
 
-60 tests across 7 files: CSV and XLSX ingestion, profiling and duplicate detection,
-declarative transformations, row mapping and mapping validation, all nine validation
-categories, beneficiary matching (deterministic and probable), the approval workflow state
-machine including its blocking rules, both dashboard providers and the mock/live switch,
-API filter validation, pagination bounds, rate limiting and upload security.
+**Unit tests** — hermetic and fast (`npm test`):
 
-`scripts/e2e-pipeline.ts` exercises the entire pipeline against a real database: upload →
-profile → map → validate → blocked publication → resolve → submit → approve → publish →
-analytics.
+| Area | Covered |
+| --- | --- |
+| CSV / XLSX ingestion | Parsing, duplicate headers, blank columns, unsupported types |
+| Profiling | Type detection, completeness, duplicate rows, row hashing |
+| Mapping | All eight transformations, chains, row projection, mapping validation |
+| Validation | All nine rule categories, severities, suggestions, quality score |
+| Duplicate detection | Deterministic and probable matching, name similarity |
+| Approval | State machine, permission gates, the unresolved-errors block |
+| Analytics | Quality-trend computation, ordering, empty and null cases |
+| Lineage | Reference-to-record-set mapping, quality-status derivation |
+| Onboarding | Every lifecycle transition and the monotonic guarantee |
+| Inventory | Field coercion, domain inference, classification |
+| Integrations | Encryption round-trip, tamper and wrong-key rejection, redaction |
+| API | Filter validation, pagination bounds, rate limiting, upload security |
+| Authorisation | Role capability matrix, workflow authorisation, login throttling |
+| Dashboard | Both providers, the mock/live switch, all four section states |
+
+**Integration tests** — against a real PostgreSQL database
+(`npm run test:integration`, opt-in via `RUN_INTEGRATION_TESTS=true`): CSV ingestion with
+file retention, checksum-based duplicate rejection, validation that retains invalid rows,
+the approval gate refusing publication while errors are unresolved, publication
+materialising only valid rows, analytics reflecting published data, lineage attributing to
+the right dataset and no other, and publication history surviving an unpublish. The suite
+creates and removes its own fixtures.
+
+`npm run test:all` runs lint, typecheck, unit tests, integration tests and the production
+build in one pass.
 
 ## Remaining production risks
 
@@ -148,6 +190,9 @@ analytics.
 | **No scheduler is wired** | `scheduleCron` is stored but nothing fires it; runs are manual | Point a scheduler at the Run Now endpoint, or add a worker that polls due integrations |
 | **Whole file held in memory during import** | Very large uploads increase memory pressure | Bounded by `UPLOAD_MAX_BYTES` (25 MB); stream-parse before raising it |
 | **Single administrator seeded** | Default credentials are a risk if not changed | Change the password on first login and create individual accounts |
+| **Login throttle and rate limits are in-process** | Both reset on deploy and are per-node, so limits are effectively multiplied when scaled out | Move both to a shared store alongside the API rate limiter |
+| **Sessions are pruned on demand, not on a schedule** | `pruneExpiredSessions()` exists but nothing calls it periodically | Call it from the same scheduler that will drive integration runs |
+| **CSP allows `unsafe-inline` for scripts and styles** | Weakens XSS defence in depth | Required by Next's runtime style and hydration injection; tighten with per-request nonces if the framework's support matures |
 | **No automated backup configured** | Deployment-dependent | Configure per the backup requirements above before go-live |
 | **No map component on the dashboard** | Geographic data is tabular only | Coordinates are already served by the API; add a map without touching the data layer |
 

@@ -8,6 +8,8 @@ import {
   type OnboardingStatus,
 } from "@/modules/governance/onboarding";
 import { Badge, KpiCard, formatDate, formatNumber } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,7 @@ export const dynamic = "force-dynamic";
  * ingestion lifecycle itself.
  */
 export default async function OnboardingPage() {
+  await requirePermission(PERMISSIONS.SOURCE_READ);
   const [sources, datasets] = await Promise.all([
     prisma.dataSource.findMany({
       where: { archivedAt: null },

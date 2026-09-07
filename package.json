@@ -14,7 +14,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "db:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script"
+    "db:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
+    "test:integration": "RUN_INTEGRATION_TESTS=true NODE_OPTIONS=--conditions=react-server vitest run tests/integration"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

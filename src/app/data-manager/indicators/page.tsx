@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { Badge, formatDate, formatNumber } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function IndicatorsPage() {
+  await requirePermission(PERMISSIONS.INDICATOR_READ);
   const indicators = await prisma.indicator.findMany({
     orderBy: { code: "asc" },
     include: {
