@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint src tests",
     "typecheck": "tsc --noEmit",
@@ -15,7 +15,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
-    "test:integration": "RUN_INTEGRATION_TESTS=true NODE_OPTIONS=--conditions=react-server vitest run tests/integration"
+    "test:integration": "RUN_INTEGRATION_TESTS=true NODE_OPTIONS=--conditions=react-server vitest run tests/integration",
+    "start:standalone": "node .next/standalone/server.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

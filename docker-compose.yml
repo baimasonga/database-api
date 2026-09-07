@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# Single-node AVDP deployment.
+#
+# Suitable for a pilot or an internal server. Before using it in production,
+# read docs/data-platform/deployment.md — in particular the sections on
+# secrets, TLS and backups.
+# ---------------------------------------------------------------------------
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-avdp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-avdp}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avdp} -d ${POSTGRES_DB:-avdp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Not published to the host: only the app needs to reach the database.
+    expose:
+      - "5432"
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-avdp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-avdp}?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?generate with openssl rand -base64 48}
+      INTEGRATION_SECRET_KEY: ${INTEGRATION_SECRET_KEY:-}
+      # Stays on fixtures until real AVDP datasets are published.
+      DATA_MODE: ${DATA_MODE:-mock}
+      DASHBOARD_API_BASE_URL: ${DASHBOARD_API_BASE_URL:-http://127.0.0.1:3000}
+      UPLOAD_STORAGE_DIR: /data/uploads
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      API_RATE_LIMIT: ${API_RATE_LIMIT:-120}
+    volumes:
+      # The retained source files. Losing this volume loses the evidence
+      # behind every published figure.
+      - uploads:/data/uploads
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  db-data:
+  uploads:

@@ -40,6 +40,9 @@ const PRODUCTION_HEADERS = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Emits a self-contained server bundle at .next/standalone, so a container
+  // image needs neither node_modules nor the source tree.
+  output: "standalone",
   // Uploaded source files are served only through authenticated route handlers,
   // never from the public/ directory.
   experimental: { serverActions: { bodySizeLimit: "25mb" } },

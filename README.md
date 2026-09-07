@@ -149,6 +149,7 @@ rows composed from named permissions, so new roles can be created without a depl
 | [`analytics-and-api.md`](docs/data-platform/analytics-and-api.md) | Analytics views, API contract, lineage |
 | [`data-onboarding-guide.md`](docs/data-platform/data-onboarding-guide.md) | How to onboard an existing AVDP dataset |
 | [`source-inventory-template.csv`](docs/data-platform/source-inventory-template.csv) / `.xlsx` | Repository inventory template |
+| [`deployment.md`](docs/data-platform/deployment.md) | How to deploy: secrets, Docker, environment, first-run checklist, scaling |
 | [`operations.md`](docs/data-platform/operations.md) | Backup, security posture, observability, production risks |
 
 ## Data mode
