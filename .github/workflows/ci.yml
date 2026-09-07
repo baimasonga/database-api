@@ -1,0 +1,162 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  quality:
+    name: Lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      # No DATABASE_URL: the build must not require a reachable database, and
+      # every route that touches one is force-dynamic.
+      - name: Production build
+        run: npm run build
+
+  integration:
+    name: Integration tests (PostgreSQL)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: avdp
+          POSTGRES_PASSWORD: avdp
+          POSTGRES_DB: avdp_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U avdp -d avdp_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://avdp:avdp@localhost:5432/avdp_ci?schema=public
+      AUTH_SECRET: ci-only-secret-not-used-outside-continuous-integration
+      INTEGRATION_SECRET_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      UPLOAD_STORAGE_DIR: ${{ github.workspace }}/.ci-uploads
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Verify the database matches the migration history
+        run: npx prisma migrate status
+
+      - name: Seed reference data
+        run: npm run db:seed
+
+      - name: Integration tests
+        run: npm run test:integration
+
+  docker:
+    name: Container image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only — nothing is pushed. This proves the Dockerfile assembles a
+      # working image before anyone relies on it for a deployment.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: avdp-platform:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the image starts and reports unhealthy without a database
+        run: |
+          docker run -d --name avdp-ci \
+            -e DATABASE_URL="postgresql://nobody:nobody@127.0.0.1:5432/absent" \
+            -e AUTH_SECRET="ci-only-secret-not-used-outside-continuous-integration" \
+            -p 3000:3000 avdp-platform:ci
+
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/health || true)
+            if [ "$code" = "503" ]; then
+              echo "Health endpoint correctly reports 503 with no database."
+              docker rm -f avdp-ci
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "The image did not report a degraded health state within 60s."
+          docker logs avdp-ci
+          docker rm -f avdp-ci
+          exit 1
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Blocking: a critical vulnerability in a dependency that ships to
+      # production is not something to merge past.
+      - name: Critical vulnerabilities in production dependencies
+        run: npm audit --omit=dev --audit-level=critical
+
+      # Informational: build-time tooling is not in the request path, so a
+      # finding there should be visible without blocking every merge.
+      - name: Full audit (informational)
+        run: npm audit || true

@@ -140,7 +140,26 @@ The app runs single-node out of the box. Before running more than one instance:
 - **Analytics refresh** happens on publication and on demand. A scheduled refresh is a
   cron call to the same function.
 
-## 9. Backups
+## 9. Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main`, every pull request, and on
+demand. Four jobs, deliberately separated so a failure names its own cause:
+
+| Job | What it proves |
+| --- | --- |
+| **Lint, typecheck, unit tests, build** | The code is sound and the production build succeeds **without a database** — the build must never require one |
+| **Integration tests (PostgreSQL)** | Migrations apply to an empty database, the schema matches the migration history, the seed runs, and the full pipeline works against real PostgreSQL |
+| **Container image builds** | The Dockerfile assembles a working image, and that image reports `503` from `/api/health` when it cannot reach a database |
+| **Dependency audit** | Blocks on a *critical* vulnerability in a production dependency; reports everything else without blocking, since build-time tooling is not in the request path |
+
+The integration job runs migrations against a throwaway `postgres:16` service
+container, so it also catches a migration that only works on a database that already
+has data.
+
+Recommended branch protection on `main`: require the *Lint, typecheck, unit tests,
+build* and *Integration tests* checks to pass before merging.
+
+## 10. Backups
 
 Back up together, on the same schedule, with the same retention:
 

@@ -9,6 +9,7 @@ next-env.d.ts.bak
 .env.local
 .env*.local
 storage/uploads/
+.ci-uploads/
 coverage/
 .DS_Store
 npm-debug.log*

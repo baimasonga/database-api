@@ -75,6 +75,13 @@ SEED_DEV_FIXTURES=true npm run db:seed
 Environment access is centralised in `src/lib/env.ts`, which is `server-only`. Database
 credentials and integration secrets never reach the browser.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs lint, typecheck and unit tests, a production build with
+no database, the integration suite against a real PostgreSQL service container, a
+container image build, and a dependency audit. See
+[`deployment.md`](docs/data-platform/deployment.md#9-continuous-integration).
+
 ## Commands
 
 | Command | Purpose |
