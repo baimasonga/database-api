@@ -18,6 +18,10 @@ export interface ConnectorResult {
   table: ParsedTable;
   recordsReceived: number;
   notes?: string;
+  /** Original file name, when the connector collected a real file. */
+  sourceFileName?: string;
+  /** Original bytes, retained verbatim so lineage survives the connector. */
+  sourceBuffer?: Buffer;
 }
 
 export interface Connector {
@@ -40,8 +44,9 @@ export const CONNECTORS: ConnectorDescriptor[] = [
   {
     type: "rest_api",
     label: "REST API",
-    description: "Pulls tabular JSON from an authenticated HTTP endpoint on a schedule.",
-    implemented: false,
+    description:
+      "Pulls an array of records from a configured JSON endpoint. System-agnostic: it needs a URL and a records path, not a particular system's API specification.",
+    implemented: true,
   },
   {
     type: "database",
@@ -64,8 +69,8 @@ export const CONNECTORS: ConnectorDescriptor[] = [
   {
     type: "scheduled_file",
     label: "Scheduled file import",
-    description: "Collects CSV/XLSX files from a watched location on a schedule.",
-    implemented: false,
+    description: "Collects the newest matching CSV/XLSX file from a watched directory.",
+    implemented: true,
   },
 ];
 
@@ -77,4 +82,8 @@ export function registerConnector(connector: Connector): void {
 
 export function getConnector(type: ConnectorType): Connector | undefined {
   return registry.get(type);
+}
+
+export function isImplemented(type: ConnectorType): boolean {
+  return CONNECTORS.find((c) => c.type === type)?.implemented ?? false;
 }

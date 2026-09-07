@@ -68,7 +68,7 @@ SEED_DEV_FIXTURES=true npm run db:seed
 | `API_RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate-limit window |
 | `BENEFICIARY_REF_FORMAT` | `AVDP-FRM-{seq}` | Human-readable beneficiary reference format |
 | `BENEFICIARY_REF_SEQ_WIDTH` | `8` | Zero-padding width for the sequence |
-| `INTEGRATION_SECRET_KEY` | — | Base64 key for encrypting connector secrets at rest |
+| `INTEGRATION_SECRET_KEY` | — | Base64 32-byte key encrypting connector credentials at rest (AES-256-GCM). Required before an integration with credentials can be saved; generate with `openssl rand -base64 32` |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | `admin@avdp.local` / `ChangeMe!2026` | Initial administrator |
 | `SEED_DEV_FIXTURES` | unset | `true` seeds development fixtures |
 

@@ -178,3 +178,41 @@ annotates renders normally.
 Sections stream independently through React Suspense. `src/app/loading.tsx` provides the
 route-level skeleton and `src/app/error.tsx` is a last-resort boundary for genuine
 defects — it shows no figures at all, because their accuracy cannot be confirmed.
+
+## External data integration (Phase 16)
+
+Connectors are adapters behind one interface, so a new source type never requires
+rewriting ingestion. Every connector's output enters the standard pipeline:
+
+```
+Connector → Raw Import → Mapping → Validation → Approval → Publication
+```
+
+| Connector | State | Notes |
+| --- | --- | --- |
+| Scheduled file import | Implemented | Collects the newest matching CSV/XLSX from a watched directory |
+| REST API | Implemented | Generic: a configured URL plus a dot path to the array of records |
+| ODK / Kobo | Framework only | Needs the form server's API specification |
+| Database | Framework only | Needs credentials and a driver decision |
+| Webhook | Framework only | Needs the pushing system's payload contract |
+
+The two implemented adapters are deliberately system-agnostic — they need configuration,
+not a particular AVDP source system's API specification, which Phase 16 forbids building
+against while unavailable.
+
+**Integrations cannot bypass governance.** The run orchestrator lands connector output in
+the raw layer and validates it, then stops: it has no code path to approve or publish.
+A connector-sourced figure reaches the dashboard only through the same human approval
+workflow as a manual upload. The payload is retained verbatim as the import file, so the
+same checksum, uploader and lineage guarantees apply, and re-running an unchanged source
+is rejected as a duplicate import rather than creating a second copy.
+
+**Actions.** `POST /api/admin/integrations/:id/test` verifies reachability without
+ingesting anything. `POST /api/admin/integrations/:id/run` performs a run, and requires
+the `integration.run` permission. Both record the attempt and its outcome on the
+integration and in the audit trail.
+
+**Credentials** are encrypted with AES-256-GCM under `INTEGRATION_SECRET_KEY`, live only
+in the encrypted secret (never in connector config), and are stripped from every API
+response by `redactIntegration()`. `scheduleCron` is stored but no scheduler is wired yet;
+runs are triggered manually.

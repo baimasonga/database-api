@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/db";
 import { Badge, formatDate, formatNumber, statusTone } from "@/components/ui";
-import { CONNECTORS } from "@/modules/integrations/registry";
+import { CONNECTORS, isImplemented, type ConnectorType } from "@/modules/integrations/registry";
+import { secretsConfigured } from "@/modules/integrations/secrets";
+import { getCurrentUser } from "@/lib/auth/session";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { IntegrationActions } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -10,17 +14,32 @@ export const dynamic = "force-dynamic";
  * become available. All connector output enters the same ingestion pipeline.
  */
 export default async function IntegrationsPage() {
-  const [integrations, runs] = await Promise.all([
+  const [user, integrations, runs, datasets, periods] = await Promise.all([
+    getCurrentUser(),
     prisma.integration.findMany({
       orderBy: { name: "asc" },
-      include: { dataSource: { select: { name: true } } },
+      include: { dataSource: { select: { id: true, name: true } } },
     }),
     prisma.integrationRun.findMany({
       orderBy: { startedAt: "desc" },
       take: 25,
       include: { integration: { select: { name: true } } },
     }),
+    prisma.dataset.findMany({
+      where: { archivedAt: null, isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, dataSourceId: true },
+    }),
+    prisma.reportingPeriod.findMany({
+      where: { status: { in: ["open", "planned"] } },
+      orderBy: { startDate: "desc" },
+      select: { id: true, code: true },
+    }),
   ]);
+
+  const canWrite = user?.permissions.includes(PERMISSIONS.INTEGRATION_WRITE) ?? false;
+  const canRun = user?.permissions.includes(PERMISSIONS.INTEGRATION_RUN) ?? false;
+  const keyConfigured = secretsConfigured();
 
   return (
     <div className="flex flex-col gap-6">
@@ -28,9 +47,17 @@ export default async function IntegrationsPage() {
         <h1 className="text-xl font-semibold tracking-tight text-[color:var(--color-avdp-900)]">Integrations</h1>
         <p className="mt-1 text-sm text-[color:var(--color-ink-600)]">
           Scheduled and API-based sources. Connector credentials are encrypted at rest and never returned by any API.
-          Integrations cannot bypass validation, approval or publication.
+          A run lands data in the raw layer and validates it — approval and publication stay human decisions, so an
+          integration cannot bypass governance controls.
         </p>
       </div>
+
+      {!keyConfigured ? (
+        <p className="card border-amber-200 bg-amber-50 text-sm text-amber-900">
+          <strong>INTEGRATION_SECRET_KEY is not configured.</strong> Connectors that need credentials cannot be saved
+          until it is set. Generate one with <code className="font-mono text-xs">openssl rand -base64 32</code>.
+        </p>
+      ) : null}
 
       <section className="card">
         <h2 className="mb-3 text-sm font-semibold">Available connector types</h2>
@@ -63,6 +90,7 @@ export default async function IntegrationsPage() {
               <th>Last attempt</th>
               <th>Last success</th>
               <th>Last failure</th>
+              {canWrite ? <th>Actions</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -79,11 +107,24 @@ export default async function IntegrationsPage() {
                 <td className="whitespace-nowrap">{formatDate(integration.lastAttemptAt)}</td>
                 <td className="whitespace-nowrap">{formatDate(integration.lastSuccessAt)}</td>
                 <td className="max-w-xs truncate text-xs">{integration.failureMessage ?? "—"}</td>
+                {canWrite ? (
+                  <td>
+                    <IntegrationActions
+                      integrationId={integration.id}
+                      canRun={canRun}
+                      implemented={isImplemented(integration.connectorType as ConnectorType)}
+                      datasets={datasets
+                        .filter((d) => d.dataSourceId === integration.dataSource.id)
+                        .map((d) => ({ id: d.id, name: d.name }))}
+                      periods={periods}
+                    />
+                  </td>
+                ) : null}
               </tr>
             ))}
             {integrations.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-[color:var(--color-ink-400)]">
+                <td colSpan={canWrite ? 10 : 9} className="text-[color:var(--color-ink-400)]">
                   No integrations configured. All data currently arrives by manual upload.
                 </td>
               </tr>

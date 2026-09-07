@@ -34,8 +34,18 @@ The one `$queryRawUnsafe` call interpolates a view name from a constant allow-li
 user input.
 
 **Secret management.** `src/lib/env.ts` is `server-only`; nothing else reads
-`process.env`. Integration credentials are stored as `secret_ciphertext` and are excluded
-from every API response. No credential is ever sent to the browser.
+`process.env`. Connector credentials are encrypted with AES-256-GCM under
+`INTEGRATION_SECRET_KEY` before they are stored: the ciphertext is self-describing
+(`v1.<iv>.<tag>.<ciphertext>`) so the format can be rotated, the authentication tag makes
+tampering detectable, and a wrong key and a tampered payload fail identically. A key of
+the wrong length is refused rather than silently weakening encryption, and an integration
+that needs credentials cannot be saved until a valid key is configured.
+
+Every integration leaves the server through `redactIntegration()`, which strips the
+ciphertext and reports only whether a secret exists — a single choke point, so a
+credential cannot escape through a route that forgot to omit the field. Audit entries
+record *that* credentials changed, never their value. No credential is ever sent to the
+browser.
 
 **Rate limiting.** Fixed window per client and path on `/api/v1`, with `Retry-After` on
 429.
@@ -59,6 +69,13 @@ record and its retired identifiers, and the merged record is retained with
 Data sources with import history are soft-disabled (`archived_at`), never hard-deleted.
 
 ## Reliability
+
+**Integration runs cannot bypass governance.** The run orchestrator lands connector output
+in the raw layer and validates it, then stops. It has no code path to approve or publish,
+so a connector reaches the dashboard only through the same human approval workflow as a
+manual upload. Each run records its attempt, counts and failure summary whether it
+succeeds or fails, and the connector's payload is retained verbatim as the import file —
+so a connector-sourced figure is exactly as traceable as an uploaded one.
 
 **Transactional imports.** Job creation, row landing and mapping seeding happen in one
 transaction. Validation persists rows and findings in one transaction. The publish action
@@ -126,8 +143,9 @@ analytics.
 | **Analytics are standard views** | Query cost grows with published volume | Promote hot views to materialised views; only `refreshAnalytics()` changes |
 | **Publication runs inline** | A very large publication can approach the 120s transaction timeout | Move materialisation to a background job queue before onboarding six-figure datasets |
 | **Materialisation covers four domains** | Input/equipment distribution, farms, plots, harvest and sales are modelled but not yet written on publication | Extend `materialiseImport` per domain as those datasets are onboarded |
-| **Connector secret encryption is not implemented** | `INTEGRATION_SECRET_KEY` and the ciphertext column exist, but no adapter writes secrets yet | Implement envelope encryption alongside the first real connector |
-| **No connectors implemented** | All data arrives by manual upload | Deliberate: Phase 16 forbids building integrations without API specifications |
+| **Three connector types remain framework-only** | ODK, database and webhook sources cannot yet be ingested automatically | Deliberate: Phase 16 forbids building integrations without API specifications. The adapter interface and run orchestration are in place, so each is a self-contained addition |
+| **Integration runs execute inline** | A large scheduled pull occupies a request worker | Move runs to the same background queue as publication before enabling high-volume schedules |
+| **No scheduler is wired** | `scheduleCron` is stored but nothing fires it; runs are manual | Point a scheduler at the Run Now endpoint, or add a worker that polls due integrations |
 | **Whole file held in memory during import** | Very large uploads increase memory pressure | Bounded by `UPLOAD_MAX_BYTES` (25 MB); stream-parse before raising it |
 | **Single administrator seeded** | Default credentials are a risk if not changed | Change the password on first login and create individual accounts |
 | **No automated backup configured** | Deployment-dependent | Configure per the backup requirements above before go-live |
@@ -143,3 +161,5 @@ analytics.
 - [ ] Real staff accounts created and assigned roles; shared accounts removed
 - [ ] Reporting periods created and the current period opened
 - [ ] Rate limits reviewed for the expected dashboard load
+- [ ] `INTEGRATION_SECRET_KEY` generated per environment and stored in the secret manager,
+      never in source control

@@ -67,7 +67,7 @@ src/
     approval/               workflow state machine, materialisation, service
     governance/             onboarding status system, inventory mapping
     analytics/              analytics read model, refresh, lineage, home model
-    integrations/           connector registry (framework)
+    integrations/           connector registry, adapters, secrets, run orchestration
   lib/                      env, db, auth, audit, API envelope, rate limiting
 prisma/                     schema, migrations, seeds
 ```
@@ -112,9 +112,11 @@ an error themselves.
    but heavier at scale. The refresh function is already the single point of change.
 4. **Rate limiting is in-process.** Correct for one node; needs a shared store before
    horizontal scaling.
-5. **Connectors are framework-only.** The adapter interface, configuration entities and
-   run logging exist; no concrete adapter is registered, by design (Phase 16 forbids
-   building integrations without API specifications).
+5. **Three connector types remain framework-only.** Scheduled file import and a generic
+   REST adapter are implemented and registered; ODK, database and webhook connectors have
+   the interface, configuration entities and run logging but no adapter, by design
+   (Phase 16 forbids building integrations without API specifications). No scheduler is
+   wired yet — `scheduleCron` is stored but runs are triggered manually.
 6. **The dashboard has no map component.** District data carries coordinates and the API
    serves them; a choropleth or point map can be added without touching the data layer.
 7. **Section streaming is server-side only.** Sections stream independently through
