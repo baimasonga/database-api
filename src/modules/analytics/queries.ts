@@ -404,25 +404,3 @@ export async function getIndicatorPerformance(
     };
   });
 }
-
-/** Lineage for one indicator: which publications and sources produced it. */
-export async function getIndicatorLineage(code: string) {
-  const indicator = await prisma.indicator.findUnique({
-    where: { code },
-    include: { primaryDataSource: true },
-  });
-  if (!indicator) return null;
-
-  const publications = await prisma.publicationRecord.findMany({
-    where: { status: "published" },
-    orderBy: { publishedAt: "desc" },
-    take: 20,
-    include: {
-      dataset: { include: { dataSource: true } },
-      reportingPeriod: true,
-      importJob: { select: { qualityScore: true, errorRowCount: true, warningRowCount: true } },
-    },
-  });
-
-  return { indicator, publications };
-}

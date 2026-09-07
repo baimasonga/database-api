@@ -66,7 +66,7 @@ src/
     identity/               beneficiary references and duplicate matching
     approval/               workflow state machine, materialisation, service
     governance/             onboarding status system, inventory mapping
-    analytics/              analytics read model, refresh, Data Manager home model
+    analytics/              analytics read model, refresh, lineage, home model
     integrations/           connector registry (framework)
   lib/                      env, db, auth, audit, API envelope, rate limiting
 prisma/                     schema, migrations, seeds

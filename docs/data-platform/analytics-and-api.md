@@ -103,14 +103,50 @@ with codes `bad_request`, `unauthorized`, `forbidden`, `not_found`, `conflict`,
 `API_RATE_LIMIT_WINDOW_SECONDS`; a 429 carries `Retry-After`. The store is in-process and
 must be moved to a shared store before running more than one node.
 
-## Data lineage in the dashboard
+## Data lineage
 
-Each headline KPI carries a collapsed "About this indicator" disclosure showing the
-definition, contributing data sources, reporting period, last update, data quality status
-(`Validated` / `Validated with warnings` / `Not yet published`) and the calculation
-version. It exposes dataset-level provenance only — never row-level beneficiary
-information. Lineage failures are caught per indicator, so a missing lineage record can
-never blank the dashboard.
+Lineage answers "where did this number come from?" by tracing the actual path:
+
+```
+indicator → calculation reference → core table → source import job
+          → publication record → dataset → data source
+```
+
+`src/modules/analytics/lineage.ts` maps each calculation reference to the core table its
+records live in, finds the import jobs that materialised those records for the reporting
+period, and returns only the live publications behind them:
+
+| Calculation reference | Traced to |
+| --- | --- |
+| `beneficiaries.*` | `beneficiaries.beneficiaries` (excluding merged records) |
+| `training.*` | `project_delivery.training_events` |
+| `production.*` | `production.production_records` |
+| `infrastructure.*` | `project_delivery.infrastructure_assets` |
+
+**Only contributing publications are reported.** An indicator with nothing published
+returns an empty publication list and `unavailable` status — it never borrows another
+dataset's provenance. An indicator whose calculation reference is not mapped reports
+`unmapped` rather than guessing.
+
+Data quality status is `validated`, `warnings` or `unavailable`. Any unresolved warning in
+*any* contributing publication downgrades the whole figure: one clean dataset does not make
+a number clean.
+
+Superseded and withdrawn publications are excluded, so lineage always describes the data
+the dashboard is serving now.
+
+`GET /api/v1/indicators/:code/lineage` returns the indicator, its calculation and version,
+the reporting period, the contributing publications (dataset, source, period, published-at,
+quality score), the combined source list, last update and quality status. The response
+carries an `x-avdp-lineage-domain` header naming the record set behind the figure.
+
+Each dashboard KPI carries a collapsed "About this indicator" disclosure showing the same
+provenance, and the Data Manager's indicator detail page shows the full contributing
+publication table with row counts, quality scores and warning counts.
+
+Provenance is **dataset-level only** — no row-level beneficiary information is exposed
+through any lineage surface. Lineage failures are caught per indicator, so a missing
+lineage record can never blank the dashboard.
 
 ## Data mode and dashboard section states
 

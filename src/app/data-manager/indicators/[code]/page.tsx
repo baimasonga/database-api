@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getIndicatorPerformance, resolveFilters } from "@/modules/analytics/queries";
+import { DOMAIN_LABELS, indicatorLineage } from "@/modules/analytics/lineage";
 import { Badge, KpiCard, ProgressBar, formatDate, formatNumber } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +22,9 @@ export default async function IndicatorDetailPage({ params }: { params: Promise<
   const resolved = await resolveFilters({});
   const performance = (await getIndicatorPerformance(resolved, indicator.code))[0] ?? null;
 
-  const publications = await prisma.publicationRecord.findMany({
-    where: { status: "published", ...(resolved.reportingPeriodId ? { reportingPeriodId: resolved.reportingPeriodId } : {}) },
-    orderBy: { publishedAt: "desc" },
-    take: 10,
-    include: { dataset: { include: { dataSource: true } }, reportingPeriod: true },
-  });
+  // Only the publications that actually produced this indicator's records.
+  const lineage = await indicatorLineage(indicator.code, resolved.reportingPeriodId);
+  const publications = lineage?.publications ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -48,8 +46,14 @@ export default async function IndicatorDetailPage({ params }: { params: Promise<
         />
         <KpiCard
           label="Data quality"
-          value={publications.length > 0 ? "Validated" : "Not published"}
-          sub={`last updated ${formatDate(performance?.last_calculated_at ?? null)}`}
+          value={
+            lineage?.qualityStatus === "validated"
+              ? "Validated"
+              : lineage?.qualityStatus === "warnings"
+                ? "With warnings"
+                : "Not published"
+          }
+          sub={`last updated ${formatDate(lineage?.lastUpdated ?? performance?.last_calculated_at ?? null)}`}
         />
       </section>
 
@@ -61,6 +65,7 @@ export default async function IndicatorDetailPage({ params }: { params: Promise<
             ["Description", indicator.description ?? "—"],
             ["Calculation method", indicator.calculationMethod ?? "—"],
             ["Calculation reference", indicator.calculationRef ?? "—"],
+            ["Traced to", lineage?.domain ? DOMAIN_LABELS[lineage.domain] : "Not mapped to a record set"],
             ["Calculation version", String(indicator.calculationVersion)],
             ["Reporting frequency", indicator.frequency.replace(/_/g, " ")],
             ["Responsible unit", indicator.responsibleUnit ?? "—"],
@@ -109,26 +114,52 @@ export default async function IndicatorDetailPage({ params }: { params: Promise<
       </section>
 
       <section className="card">
-        <h2 className="mb-3 text-sm font-semibold">Indicator data sources</h2>
-        <ul className="flex flex-col gap-2 text-sm">
-          {publications.map((publication) => (
-            <li key={publication.id} className="flex flex-wrap items-baseline justify-between gap-2">
-              <span>
-                {publication.dataset.name}{" "}
-                <span className="text-xs text-[color:var(--color-ink-600)]">via {publication.dataset.dataSource.name}</span>
-              </span>
-              <span className="text-xs text-[color:var(--color-ink-600)]">
-                <Badge tone="success">published</Badge> {publication.reportingPeriod.code} ·{" "}
-                {formatDate(publication.publishedAt)}
-              </span>
-            </li>
-          ))}
-          {publications.length === 0 ? (
-            <li className="text-[color:var(--color-ink-400)]">
-              No published datasets yet contribute to this indicator.
-            </li>
-          ) : null}
-        </ul>
+        <h2 className="mb-1 text-sm font-semibold">Data lineage</h2>
+        <p className="mb-3 text-xs text-[color:var(--color-ink-400)]">
+          The published datasets whose records produce this figure. Dataset-level provenance only — no row-level
+          beneficiary information is exposed.
+        </p>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Dataset</th>
+              <th>Data source</th>
+              <th>Period</th>
+              <th className="text-right">Rows</th>
+              <th className="text-right">Quality</th>
+              <th className="text-right">Warnings</th>
+              <th>Published</th>
+            </tr>
+          </thead>
+          <tbody>
+            {publications.map((publication) => (
+              <tr key={publication.publicationRecordId}>
+                <td className="font-medium">{publication.datasetName}</td>
+                <td>{publication.dataSourceName}</td>
+                <td>{publication.reportingPeriodCode}</td>
+                <td className="text-right tabular-nums">{formatNumber(publication.publishedRowCount)}</td>
+                <td className="text-right tabular-nums">
+                  {publication.qualityScore === null ? "—" : formatNumber(publication.qualityScore, 1)}
+                </td>
+                <td className="text-right tabular-nums">
+                  {publication.warningRowCount > 0 ? (
+                    <Badge tone="warning">{formatNumber(publication.warningRowCount)}</Badge>
+                  ) : (
+                    "0"
+                  )}
+                </td>
+                <td className="whitespace-nowrap">{formatDate(publication.publishedAt)}</td>
+              </tr>
+            ))}
+            {publications.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="text-[color:var(--color-ink-400)]">
+                  No published datasets yet contribute to this indicator.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
       </section>
     </div>
   );
